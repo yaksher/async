@@ -71,22 +71,7 @@ typedef struct thread_data {
 
 #define TPOOL_DEFAULT_SIZE 16
 
-pthread_once_t thread_local_init = PTHREAD_ONCE_INIT;
-pthread_key_t thread_local_key;
-
-// __thread tdata_t *tdata;
-
-static void tdata_free(void *data) {
-    free(data);
-}
-
-static void thread_local_init_func() {
-    pthread_key_create(&thread_local_key, tdata_free);
-}
-
-static tdata_t *get_tdata() {
-    return pthread_getspecific(thread_local_key);
-}
+__thread tdata_t *tdata = NULL;
 
 #define PAGE_SIZE 4096
 #define TASK_STACK_SIZE PAGE_SIZE * 128
@@ -106,11 +91,10 @@ static void print_context(ucontext_t *context) {
 }
 
 static void task_call_wrapper() {
-    tdata_t *tdata = get_tdata();
     tpool_work work = tdata->aux1;
     void *arg = tdata->aux2;
     fprintf(stderr, "Thread %lu started a task\n", tdata->id);
-    get_tdata()->aux1 = work(arg);
+    tdata->aux1 = work(arg);
     fprintf(stderr, "Thread %lu finished a task\n", tdata->id);
     print_context(tdata->return_context);
     setcontext(tdata->return_context);
@@ -132,7 +116,6 @@ static void *run_task(task_t *task) {
     ucontext_t return_context;
     bool returning = false;
     getcontext(&return_context);
-    tdata_t *tdata = get_tdata();
     fprintf(stderr, "Thread %lu passing getcontext\n", tdata->id);
     if (returning) {
         fprintf(stderr, "Thread %lu returning from task\n", tdata->id);
@@ -168,7 +151,7 @@ static void *run_task(task_t *task) {
     assert(false && "Unreachable.");
 }
 
-static bool launch_task(tpool_pool *pool, tdata_t *tdata) {
+static bool launch_task(tpool_pool *pool) {
     task_t *task = tpool_dequeue(pool->task_queue);
 
     if (task == NULL) {
@@ -199,19 +182,17 @@ static bool launch_task(tpool_pool *pool, tdata_t *tdata) {
 
 static void *work_launcher(void *pool) {
     ucontext_t yield_context;
-    tdata_t *tdata = get_tdata();
     tdata->yield_context = &yield_context;
     getcontext(&yield_context);
     while (true) {
-        if (launch_task(pool, tdata)) {
+        if (launch_task(pool)) {
             return NULL;
         }
     }
 }
 
 static void *thread_start(void *arg) {
-    tdata_t *tdata = calloc(1, sizeof(tdata_t));
-    pthread_setspecific(thread_local_key, tdata);
+    tdata = calloc(1, sizeof(tdata_t));
     tdata->id = *(size_t *) (arg + sizeof(tpool_pool *));
     tpool_pool *pool = *(tpool_pool **) arg;
     free(arg);
@@ -222,7 +203,6 @@ tpool_pool *tpool_init(size_t size) {
     if (size == 0) {
         size = TPOOL_DEFAULT_SIZE;
     }
-    pthread_once(&thread_local_init, thread_local_init_func);
 
     tpool_pool *pool = malloc(sizeof(tpool_pool) + sizeof(pthread_t) * size);
 
@@ -288,24 +268,22 @@ tpool_list *tpool_close(tpool_pool *pool, bool get_results) {
  * @param pool 
  */
 void yield(tpool_pool *pool) {
-    tdata_t *tdata = get_tdata();
     task_t *task = malloc(sizeof(task_t));
     task->type = RESUME;
     task->handle = tdata->curr_handle;
     bool returning = false;
     getcontext(&task->context); // returns here when resumed
-    fprintf(stderr, "Thread %lu passed save context with returning %d\n", get_tdata()->id, returning);
+    fprintf(stderr, "Thread %lu passed save context with returning %d\n", tdata->id, returning);
     if (!returning) {
         returning = true;
         tpool_enqueue(pool->task_queue, task);
-        fprintf(stderr, "Thread %lu yielding\n", get_tdata()->id);
+        fprintf(stderr, "Thread %lu yielding\n", tdata->id);
         print_context(tdata->yield_context);
         setcontext(tdata->yield_context); // doesn't return
     }
 }
 
 void *tpool_task_await(tpool_handle *handle) {
-    tdata_t *tdata = get_tdata();
     if (tdata) {
         yield(handle->pool);
     }
@@ -383,7 +361,7 @@ void *fibonacci(void *arg) {
 
 int main() {
     // tpool_pool *pool = tpool_init(0);
-    pool = tpool_init(1);
+    pool = tpool_init(2);
 
     uintptr_t f = (uintptr_t) fibonacci((void *) 6);
     printf("%lu\n", f);
