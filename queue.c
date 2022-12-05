@@ -14,10 +14,7 @@ struct tpool_queue {
     size_t count;
     pthread_mutex_t new_mut;
     pthread_cond_t new_cond;
-    bool closing;
-    bool no_block;
-    size_t n_waiting;
-    size_t wait_threshold;
+    bool unblock;
 };
 
 static void *lock_get(pthread_mutex_t *mutex, void **loc) {
@@ -65,10 +62,7 @@ tpool_queue *tpool_queue_init() {
     tpool_list_init(&queue->in);
     tpool_list_init(&queue->out);
     queue->count = 0;
-    queue->closing = false;
-    queue->no_block = false;
-    queue->n_waiting = 0;
-    queue->wait_threshold = 0;
+    queue->unblock = false;
 
     assert(!pthread_mutex_init(&queue->new_mut, NULL));
     assert(!pthread_cond_init(&queue->new_cond, NULL));
@@ -95,30 +89,18 @@ void tpool_enqueue(tpool_queue *queue, void *item) {
     pthread_mutex_unlock(&queue->new_mut);
 }
 
-void tpool_queue_close(tpool_queue *queue) {
+void tpool_queue_unblock(tpool_queue *queue) {
     pthread_mutex_lock(&queue->new_mut);
-    queue->closing = true;
-    if (queue->n_waiting >= queue->wait_threshold) {
-        queue->no_block = true;
-        pthread_cond_broadcast(&queue->new_cond);
-    }
+    queue->unblock = true;
+    pthread_cond_broadcast(&queue->new_cond);
     pthread_mutex_unlock(&queue->new_mut);
 }
 
 void tpool_queue_wait(tpool_queue *queue) {
     pthread_mutex_lock(&queue->new_mut);
-    queue->n_waiting++;
-
-    if (queue->closing && queue->n_waiting >= queue->wait_threshold) {
-        queue->no_block = true;
-        pthread_cond_broadcast(&queue->new_cond);
-    }
-
-    while (!queue->no_block && (size_t) lock_get(&queue->body_mutex, (void **) &queue->count) == 0) {
+    while (!queue->unblock && (size_t) lock_get(&queue->body_mutex, (void **) &queue->count) == 0) {
         pthread_cond_wait(&queue->new_cond, &queue->new_mut);
     }
-
-    queue->n_waiting--;
     pthread_mutex_unlock(&queue->new_mut);
 }
 

@@ -8,7 +8,7 @@ ifdef DEBUG
     $(shell touch .debug)
   endif
 else
-  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -O0 -pthread 
+  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -O3 -pthread 
   ifneq ($(wildcard .debug),)
     $(shell $(CLEAN_COMMAND) .debug)
   endif

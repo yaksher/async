@@ -56,6 +56,7 @@ struct tpool_pool {
 
     size_t task_count;
     pthread_mutex_t task_count_mutex;
+    pthread_cond_t task_count_cond;
 
     size_t pool_size;
     pthread_t threads[];
@@ -63,11 +64,12 @@ struct tpool_pool {
 
 typedef struct thread_data {
     ucontext_t *yield_context;
-    ucontext_t *return_context;
+    task_t *yielded_task;
     void *aux1;
     void *aux2;
     size_t id;
     tpool_handle *curr_handle;
+    pthread_t self;
 } tdata_t;
 
 #define TPOOL_DEFAULT_SIZE 16
@@ -75,7 +77,72 @@ typedef struct thread_data {
 pthread_once_t thread_local_init = PTHREAD_ONCE_INIT;
 pthread_key_t thread_local_key;
 
-__thread tdata_t *tdata;
+__thread volatile tdata_t *tdata;
+
+static volatile tdata_t *get_tdata();
+
+#define _LOG_INNER(PREFIX, FMT, ARGS...)\
+    do {\
+        if (get_tdata() == NULL) {\
+            fprintf(stderr, PREFIX "M:   %s:%d: %s: " FMT, __FILE__, __LINE__, __func__ ,##ARGS);\
+        } else {\
+            fprintf(stderr, PREFIX "T%02lu: %s:%d: %s: " FMT, get_tdata()->id, __FILE__, __LINE__, __func__ ,##ARGS);\
+        }\
+    } while (0)
+
+#define LOG(FMT, ARGS...) _LOG_INNER("", FMT, ##ARGS)
+
+#define ERROR(ARGS...)\
+    do {\
+        _LOG_INNER("ERROR: ", ARGS);\
+        _mm_mfence();\
+        exit(*(volatile int *) 0xFA);\
+    } while (0)
+
+#define LOG_LEVEL 2
+
+#if (LOG_LEVEL >= 1)
+#define WARN LOG
+#else
+#define WARN(...) do {} while (0)
+#endif
+
+#if (LOG_LEVEL >= 2)
+#define INFO LOG
+#else
+#define INFO(...) do {} while (0)
+#endif
+
+#if (LOG_LEVEL >= 3)
+#define DEBUG LOG
+#else
+#define DEBUG(...) do {} while (0)
+#endif
+
+#if (LOG_LEVEL >= 4)
+#define VERBOSE LOG
+#else
+#define VERBOSE(...) do {} while (0)
+#endif
+
+#define ASSERT_TRACE(EXPR...)\
+    do {\
+        if (!(EXPR)) {\
+            ERROR("Assertion `" #EXPR "` failed.\n");\
+        }\
+    } while (0)
+
+#define UNIMPLEMENTED(...) ERROR("Unimplemented.\n")
+
+#define UNREACHABLE(...) ERROR("Unreachable.\n")
+
+static volatile tdata_t *get_tdata() {
+    if ((volatile tdata_t *) tdata != NULL) {
+        ASSERT_TRACE(pthread_equal(pthread_self(), tdata->self)
+            && "Thread contexted switched without properly handling thread local data.");
+    }
+    return tdata;
+}
 
 static void tdata_free(void *data) {
     free(data);
@@ -85,36 +152,47 @@ static void thread_local_init_func() {
     pthread_key_create(&thread_local_key, tdata_free);
 }
 
-static volatile tdata_t *get_tdata() {
+static inline void getcontext_protected(ucontext_t *ucp) {
     _mm_mfence();
-    return tdata;
+    getcontext(ucp);
+    _mm_mfence();
+}
+
+__attribute__((noreturn)) static inline void setcontext_protected(ucontext_t *ucp) {
+    _mm_mfence();
+    setcontext(ucp);
+    UNREACHABLE();
+}
+
+static inline void swapcontext_protected(ucontext_t *oucp, ucontext_t *ucp) {
+    _mm_mfence();
+    swapcontext(oucp, ucp);
+    _mm_mfence();
 }
 
 #define PAGE_SIZE 4096
 #define TASK_STACK_SIZE PAGE_SIZE * 128
 
-static void set_rip(ucontext_t *context, void *rip) {
-    assert((uintptr_t) rip >= PAGE_SIZE);
-    context->uc_mcontext->__ss.__rip = (uintptr_t) rip;
-}
-
 static void print_context(ucontext_t *context) {
-    return;
-    fprintf(stderr, "Context:\n");
-    fprintf(stderr, "RIP:         %p\n", (void *) context->uc_mcontext->__ss.__rip);
-    fprintf(stderr, "RSP:         %p\n", (void *) context->uc_mcontext->__ss.__rsp);
-    fprintf(stderr, "Stack start: %p\n", (void *) context->uc_stack.ss_sp);
-    fprintf(stderr, "Stack size:  %lu\n", context->uc_stack.ss_size);
+    (void) context;
+    VERBOSE("\n"
+            "\tRIP:         %p\n"
+            "\tRSP:         %p\n"
+            "\tStack start: %p\n"
+            "\tStack size:  %lu\n",
+            (void *) context->uc_mcontext->__ss.__rip,
+            (void *) context->uc_mcontext->__ss.__rsp,
+            (void *) context->uc_stack.ss_sp,
+            context->uc_stack.ss_size);
 }
 
-static void task_call_wrapper() {
+static void task_wrapper() {
     tpool_work work = get_tdata()->aux1;
     void *arg = get_tdata()->aux2;
-    fprintf(stderr, "Thread %lu started a task\n", get_tdata()->id);
-    get_tdata()->aux1 = work(arg);
-    fprintf(stderr, "Thread %lu finished a task\n", get_tdata()->id);
-    print_context(get_tdata()->return_context);
-    setcontext(get_tdata()->return_context);
+    DEBUG("Started with arg %p\n", arg);
+    void *out = work(arg); // Calling thread and returning thread may differ.
+    DEBUG("Finished with ret %p\n", out);
+    get_tdata()->aux1 = out;
 }
 
 /**
@@ -131,41 +209,31 @@ static void task_call_wrapper() {
  */
 static void *run_task(task_t *task) {
     ucontext_t return_context;
-    bool returning = false;
-    getcontext(&return_context);
-    fprintf(stderr, "Thread %lu passing getcontext\n", get_tdata()->id);
-    if (returning) {
-        fprintf(stderr, "Thread %lu returning from task\n", get_tdata()->id);
-        return get_tdata()->aux1;
-    }
-    returning = true;
     ucontext_t context;
-
     if (task->type == INITIAL) {
+        DEBUG("Initializing task %p\n", task->handle);
         getcontext(&context);
         context.uc_stack = (stack_t) {
-            .ss_sp = calloc(TASK_STACK_SIZE, 1),
+            .ss_sp = malloc(TASK_STACK_SIZE),
             .ss_size = TASK_STACK_SIZE,
             .ss_flags = 0
         };
         get_tdata()->aux1 = task->work;
         get_tdata()->aux2 = task->arg;
-        get_tdata()->return_context = &return_context;
-        // set_rip(&context, task_call_wrapper);
-        // context.uc_link = &return_context;
-        makecontext(&context, task_call_wrapper, 0);
+        context.uc_link = &return_context;
+        makecontext(&context, task_wrapper, 0);
     } else if (task->type == RESUME) {
-        fprintf(stderr, "Resuming task\n");
-        print_context(&task->context);
+        DEBUG("Resuming task %p\n", task->handle);
         context = task->context;
-        get_tdata()->return_context = &return_context;
-        // context.uc_link = &return_context;
+        context.uc_link = &return_context;
     } else {
-        assert(false && "Invalid task type.");
+        ERROR("Invalid task type.\n");
     }
     free(task);
-    setcontext(&context);
-    assert(false && "Unreachable.");
+    swapcontext_protected(&return_context, &context);
+
+    DEBUG("Returning from task %p with value %p\n", task->handle, get_tdata()->aux1);
+    return get_tdata()->aux1;
 }
 
 static bool launch_task(tpool_pool *pool) {
@@ -176,15 +244,16 @@ static bool launch_task(tpool_pool *pool) {
     }
 
     get_tdata()->curr_handle = task->handle;
+    void *result = run_task(task); // May not return.
     if (task->handle == (void *) QUEUE_RESULT) {
-        tpool_enqueue(pool->result_queue, run_task(task));
+        tpool_enqueue(pool->result_queue, result);
     }
     else if (task->handle == (void *) DISCARD_RESULT) {
-        run_task(task);
+        // Do nothing with result.
     }
     else {
         tpool_handle *handle = task->handle;
-        handle->result = run_task(task);
+        handle->result = result;
 
         pthread_mutex_lock(&handle->mutex);
         handle->status = FINISHED;
@@ -193,28 +262,34 @@ static bool launch_task(tpool_pool *pool) {
     }
     pthread_mutex_lock(&pool->task_count_mutex);
     pool->task_count--;
+    if (pool->task_count == 0) {
+        pthread_cond_broadcast(&pool->task_count_cond);
+    }
     pthread_mutex_unlock(&pool->task_count_mutex);
     return false;
 }
 
-static void *work_launcher(void *pool) {
+static void *pool_thread(void *arg) {
+    tdata = calloc(1, sizeof(tdata_t));
+    tdata->self = pthread_self();
+    tdata->id = *(size_t *) (arg + sizeof(tpool_pool *));
+    // pthread_setspecific(thread_local_key, tdata);
+
+    tpool_pool *pool = *(tpool_pool **) arg;
+    free(arg);
+
     ucontext_t yield_context;
     get_tdata()->yield_context = &yield_context;
-    getcontext(&yield_context);
+    getcontext_protected(&yield_context);
+    if (get_tdata()->yielded_task != NULL) {
+        tpool_enqueue(pool->task_queue, get_tdata()->yielded_task);
+        get_tdata()->yielded_task = NULL;
+    }
     while (true) {
         if (launch_task(pool)) {
             return NULL;
         }
     }
-}
-
-static void *thread_start(void *arg) {
-    tdata = calloc(1, sizeof(tdata_t));
-    pthread_setspecific(thread_local_key, tdata);
-    tdata->id = *(size_t *) (arg + sizeof(tpool_pool *));
-    tpool_pool *pool = *(tpool_pool **) arg;
-    free(arg);
-    return work_launcher(pool);
 }
 
 tpool_pool *tpool_init(size_t size) {
@@ -239,7 +314,7 @@ tpool_pool *tpool_init(size_t size) {
         void *thread_start_arg = malloc(sizeof(tpool_pool *) + sizeof(size_t));
         *(tpool_pool **) thread_start_arg = pool;
         *(size_t *) (thread_start_arg + sizeof(tpool_pool *)) = i;
-        int ret = pthread_create(&pool->threads[i], NULL, thread_start, thread_start_arg);
+        int ret = pthread_create(&pool->threads[i], NULL, pool_thread, thread_start_arg);
         if (ret) {
             return NULL;
         }
@@ -251,7 +326,12 @@ tpool_list *tpool_close(tpool_pool *pool, bool get_results) {
     size_t size = pool->pool_size;
     
     // queue will return NULL instead of blocking when empty
-    tpool_queue_close(pool->task_queue);
+    pthread_mutex_lock(&pool->task_count_mutex);
+    while (pool->task_count > 0) {
+        pthread_cond_wait(&pool->task_count_cond, &pool->task_count_mutex);
+    }
+    tpool_queue_unblock(pool->task_queue);
+    pthread_mutex_unlock(&pool->task_count_mutex);
 
     for (size_t i = 0; i < size; i++) {
         pthread_join(pool->threads[i], NULL);
@@ -280,9 +360,18 @@ tpool_list *tpool_close(tpool_pool *pool, bool get_results) {
     return ret;
 }
 
+size_t num_queued_tasks(tpool_pool *pool) {
+    pthread_mutex_lock(&pool->task_queue->body_mutex);
+    size_t ret = pool->task_queue->count;
+    pthread_mutex_unlock(&pool->task_queue->body_mutex);
+    return ret;
+}
+
 /**
  * @brief Yields execution to the threadpool, enqueueing a resume task so that
  * the threadpool can resume execution of the current task eventually.
+ * 
+ * May return in different thread than the caller, but returns exactly once.
  * 
  * @param pool 
  */
@@ -290,26 +379,24 @@ void yield(tpool_pool *pool) {
     task_t *task = malloc(sizeof(task_t));
     task->type = RESUME;
     task->handle = get_tdata()->curr_handle;
-    bool returning = false;
-    getcontext(&task->context); // returns here when resumed
-    fprintf(stderr, "Thread %lu passed save context with returning %d\n", get_tdata()->id, returning);
-    if (!returning) {
-        returning = true;
-        tpool_enqueue(pool->task_queue, task);
-        fprintf(stderr, "Thread %lu yielding\n", get_tdata()->id);
-        print_context(get_tdata()->yield_context);
-        setcontext(get_tdata()->yield_context); // doesn't return
-    }
+    get_tdata()->yielded_task = task;
+    tpool_enqueue(pool->task_queue, task);
+    DEBUG("Yielding task %p.\n", task->handle);
+    swapcontext_protected(&task->context, get_tdata()->yield_context); // doesn't return
+    DEBUG("Resuming %p.\n", task->handle);
 }
 
 void *tpool_task_await(tpool_handle *handle) {
     if (get_tdata()) {
-        yield(handle->pool);
+        pthread_mutex_lock(&handle->mutex);
+        while (handle->status == WAITING && num_queued_tasks(handle->pool) > 0) {
+            pthread_mutex_unlock(&handle->mutex);
+            yield(handle->pool); // Potentially returns in different thread.
+            pthread_mutex_lock(&handle->mutex);
+        }
+    } else {
+        pthread_mutex_lock(&handle->mutex);
     }
-    // Else, this is not one of the threadpool threads, so it should just wait,
-    // rather than yield control.
-
-    pthread_mutex_lock(&handle->mutex);
     while (handle->status == WAITING) {
         pthread_cond_wait(&handle->result_cond, &handle->mutex);
     }
@@ -347,8 +434,9 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg, t
     task->work = work;
     task->arg = arg;
     task->handle = handle;
+    
     tpool_enqueue(pool->task_queue, task);
-
+    
     pthread_mutex_lock(&pool->task_count_mutex);
     pool->task_count++;
     pthread_mutex_unlock(&pool->task_count_mutex);
@@ -367,6 +455,7 @@ tpool_pool *pool;
 
 void *fibonacci(void *arg) {
     uintptr_t val = (uintptr_t) arg;
+    DEBUG("Fibonacci called with %lu\n", val);
     if (val == 0) {
         return (void *) 0;
     } else if (val == 1) {
@@ -375,6 +464,7 @@ void *fibonacci(void *arg) {
     tpool_handle *handle = tpool_task_enqueue(pool, fibonacci, (void *) val - 2, HANDLE);
     uintptr_t n1 = (uintptr_t) fibonacci((void *) val - 1);
     uintptr_t n2 = (uintptr_t) tpool_task_await(handle);
+    DEBUG("Fibonacci(%lu) = %lu\n", val, n1 + n2);
     return (void *) n1 + n2;
 }
 
@@ -382,7 +472,7 @@ int main() {
     // tpool_pool *pool = tpool_init(0);
     pool = tpool_init(4);
 
-    uintptr_t f = (uintptr_t) fibonacci((void *) 6);
+    uintptr_t f = (uintptr_t) fibonacci((void *) 10);
     printf("%lu\n", f);
 
     tpool_close(pool, false);
@@ -391,12 +481,12 @@ int main() {
 tpool_list *tpool_wait(tpool_pool *pool, bool get_results) {
     (void) pool;
     (void) get_results;
-    assert(false && "ERROR: Unimplimented!");
+    UNIMPLEMENTED();
 }
 
 tpool_list *tpool_map(tpool_pool *pool, tpool_list *list, tpool_work func) {
     (void) pool;
     (void) list;
     (void) func;
-    assert(false && "ERROR: Unimplimented!");
+    UNIMPLEMENTED();
 }

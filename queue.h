@@ -27,7 +27,7 @@ void tpool_queue_free(tpool_queue *queue);
 
 void tpool_enqueue(tpool_queue *queue, void *item);
 
-void tpool_queue_close(tpool_queue *queue);
+void tpool_queue_unblock(tpool_queue *queue);
 
 void tpool_queue_wait(tpool_queue *queue);
 
