@@ -60,10 +60,9 @@ struct tpool_pool {
 typedef struct thread_data {
     ucontext_t yield_context;
     ucontext_t return_context;
-    void *aux1;
-    void *aux2;
     size_t id;
     task_t *curr_task;
+    void *aux;
     pthread_t self;
 } tdata_t;
 
@@ -148,13 +147,13 @@ static void thread_local_init_func() {
 }
 
 #define PAGE_SIZE 4096
-#define TASK_STACK_SIZE PAGE_SIZE * 64
+#define TASK_STACK_SIZE PAGE_SIZE * 16
 
 static void task_wrapper() {
     tdata_t *tdata = get_tdata();
-    void *out = ((tpool_work) tdata->aux1)(tdata->aux2);
+    void *out = tdata->curr_task->work(tdata->curr_task->arg);
     tdata = get_tdata();
-    tdata->aux1 = out;
+    tdata->aux = out;
     setcontext(&tdata->return_context);
 }
 
@@ -182,8 +181,6 @@ static void *run_task(task_t *task) {
             .ss_size = TASK_STACK_SIZE,
             .ss_flags = 0
         };
-        tdata->aux1 = task->work;
-        tdata->aux2 = task->arg;
         makecontext(&task->context, task_wrapper, 0);
     } else if (task->type == RESUME) {
         DEBUG("Resuming task %p\n", task->handle);
@@ -198,7 +195,7 @@ static void *run_task(task_t *task) {
     free(tdata->curr_task->stack);
     free(tdata->curr_task);
     tdata->curr_task = NULL;
-    return tdata->aux1;
+    return tdata->aux;
 }
 
 static bool launch_task(tpool_pool *pool) {
@@ -429,8 +426,10 @@ int main() {
     // tpool_pool *pool = tpool_init(0);
     pool = tpool_init(0);
 
-    uintptr_t f = (uintptr_t) fibonacci((void *) 25);
-    printf("%lu\n", f);
+    // for (size_t i = 0; i < 100; i++) {
+        uintptr_t f = (uintptr_t) fibonacci((void *) 10);
+        printf("%lu\n", f);
+    // }
 
     tpool_close(pool, false);
 }
