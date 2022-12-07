@@ -3,12 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <stdbool.h>
-#include <unistd.h>
-#include <assert.h>
-#include <string.h>
-#include <x86intrin.h>
 
 #include "threadpool.h"
 #include "queue.h"
@@ -73,7 +68,6 @@ static tdata_t *get_tdata();
 #define ERROR(ARGS...)\
     do {\
         _LOG_INNER("ERROR: ", ARGS);\
-        _mm_mfence();\
         exit(*(volatile int *) 0xFA);\
     } while (0)
 
@@ -103,7 +97,7 @@ static tdata_t *get_tdata();
 #define VERBOSE(...) do {} while (0)
 #endif
 
-#define ASSERT_TRACE(EXPR...)\
+#define ASSERT(EXPR...)\
     do {\
         if (!(EXPR)) {\
             ERROR("Assertion `" #EXPR "` failed.\n");\
@@ -116,7 +110,7 @@ static tdata_t *get_tdata();
 
 static tdata_t *get_tdata() {
     if ((volatile tdata_t *) tdata != NULL) {
-        ASSERT_TRACE(pthread_equal(pthread_self(), tdata->self)
+        ASSERT(pthread_equal(pthread_self(), tdata->self)
             && "Thread contexted switched without properly handling thread local data.");
     }
     return tdata;
@@ -253,7 +247,7 @@ tpool_pool *tpool_init(size_t size) {
     pool->pool_size = size;
     pool->task_count = 0;
 
-    assert(!pthread_mutex_init(&pool->task_count_mutex, NULL));
+    ASSERT(!pthread_mutex_init(&pool->task_count_mutex, NULL));
 
     pool->task_queue = tpool_queue_init();
     pool->result_queue = tpool_queue_init();
@@ -382,13 +376,6 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg, t
     pthread_mutex_unlock(&pool->task_count_mutex);
 
     return (void *) handle > (void *) DISCARD_RESULT ? handle : NULL;
-}
-
-void *test_func(void *arg) {
-    sleep(1);
-    uint64_t *ret = malloc(sizeof(uint64_t));
-    *ret = ((uint64_t) arg) * ((uint64_t) arg);
-    return ret;
 }
 
 tpool_pool *pool;
