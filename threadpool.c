@@ -72,9 +72,9 @@ typedef struct thread_data {
 pthread_once_t thread_local_init = PTHREAD_ONCE_INIT;
 pthread_key_t thread_local_key;
 
-__thread volatile tdata_t *tdata;
+__thread tdata_t *tdata;
 
-static volatile tdata_t *get_tdata();
+static tdata_t *get_tdata();
 
 #define _LOG_INNER(PREFIX, FMT, ARGS...)\
     do {\
@@ -131,7 +131,7 @@ static volatile tdata_t *get_tdata();
 
 #define UNREACHABLE(...) ERROR("Unreachable.\n")
 
-static volatile tdata_t *get_tdata() {
+static tdata_t *get_tdata() {
     if ((volatile tdata_t *) tdata != NULL) {
         ASSERT_TRACE(pthread_equal(pthread_self(), tdata->self)
             && "Thread contexted switched without properly handling thread local data.");
@@ -147,48 +147,15 @@ static void thread_local_init_func() {
     pthread_key_create(&thread_local_key, tdata_free);
 }
 
-#define GETCONTEXT(ARGS...) do {\
-    _mm_mfence();\
-    getcontext(ARGS);\
-    _mm_mfence();\
-} while (0)
-
-#define SETCONTEXT(ARGS...) do {\
-    _mm_mfence();\
-    setcontext(ARGS);\
-    UNREACHABLE();\
-} while (0)
-
-#define SWAPCONTEXT(ARGS...) do {\
-    _mm_mfence();\
-    swapcontext(ARGS);\
-    _mm_mfence();\
-} while (0)
-
 #define PAGE_SIZE 4096
-#define TASK_STACK_SIZE PAGE_SIZE * 128
-
-static void print_context(ucontext_t *context) {
-    (void) context;
-    VERBOSE("\n"
-            "\tRIP:         %p\n"
-            "\tRSP:         %p\n"
-            "\tStack start: %p\n"
-            "\tStack size:  %lu\n",
-            (void *) context->uc_mcontext->__ss.__rip,
-            (void *) context->uc_mcontext->__ss.__rsp,
-            (void *) context->uc_stack.ss_sp,
-            context->uc_stack.ss_size);
-}
+#define TASK_STACK_SIZE PAGE_SIZE * 64
 
 static void task_wrapper() {
-    tpool_work work = get_tdata()->aux1;
-    void *arg = get_tdata()->aux2;
-    DEBUG("Started with arg %p\n", arg);
-    void *out = work(arg); // Calling thread and returning thread may differ.
-    DEBUG("Finished with ret %p\n", out);
-    get_tdata()->aux1 = out;
-    SETCONTEXT(&get_tdata()->return_context);
+    tdata_t *tdata = get_tdata();
+    void *out = ((tpool_work) tdata->aux1)(tdata->aux2);
+    tdata = get_tdata();
+    tdata->aux1 = out;
+    setcontext(&tdata->return_context);
 }
 
 /**
@@ -204,7 +171,8 @@ static void task_wrapper() {
  * @return void* 
  */
 static void *run_task(task_t *task) {
-    get_tdata()->curr_task = task;
+    tdata_t *tdata = get_tdata();
+    tdata->curr_task = task;
     if (task->type == INITIAL) {
         DEBUG("Initializing task %p\n", task->handle);
         getcontext(&task->context);
@@ -214,28 +182,23 @@ static void *run_task(task_t *task) {
             .ss_size = TASK_STACK_SIZE,
             .ss_flags = 0
         };
-        get_tdata()->aux1 = task->work;
-        get_tdata()->aux2 = task->arg;
+        tdata->aux1 = task->work;
+        tdata->aux2 = task->arg;
         makecontext(&task->context, task_wrapper, 0);
     } else if (task->type == RESUME) {
         DEBUG("Resuming task %p\n", task->handle);
     } else {
         ERROR("Invalid task type.\n");
     }
-    SWAPCONTEXT(&get_tdata()->return_context, &task->context);
+    swapcontext(&tdata->return_context, &task->context);
 
-    DEBUG("Returning from task %p with value %p\n", task->handle, get_tdata()->aux1);
-    free(get_tdata()->curr_task->stack);
-    free(get_tdata()->curr_task);
-    get_tdata()->curr_task = NULL;
-    return get_tdata()->aux1;
-}
+    tdata = get_tdata();
 
-size_t num_queued_tasks(tpool_pool *pool) {
-    pthread_mutex_lock(&pool->task_queue->body_mutex);
-    size_t ret = pool->task_queue->count;
-    pthread_mutex_unlock(&pool->task_queue->body_mutex);
-    return ret;
+    DEBUG("Returning from task %p with value %p\n", task->handle, tdata->aux1);
+    free(tdata->curr_task->stack);
+    free(tdata->curr_task);
+    tdata->curr_task = NULL;
+    return tdata->aux1;
 }
 
 static bool launch_task(tpool_pool *pool) {
@@ -282,12 +245,13 @@ static void *pool_thread(void *arg) {
     tpool_pool *pool = *(tpool_pool **) arg;
     free(arg);
 
-    GETCONTEXT(&get_tdata()->yield_context);
+    getcontext(&tdata->yield_context);
+    tdata_t *tdata = get_tdata();
     DEBUG("Passed yield context.\n");
-    if (get_tdata()->curr_task != NULL) {
+    if (tdata->curr_task != NULL) {
         DEBUG("Enqueued task.\n");
-        tpool_enqueue(pool->task_queue, get_tdata()->curr_task);
-        get_tdata()->curr_task = NULL;
+        tpool_enqueue(pool->task_queue, tdata->curr_task);
+        tdata->curr_task = NULL;
     }
     while (true) {
         if (launch_task(pool)) {
@@ -373,26 +337,26 @@ tpool_list *tpool_close(tpool_pool *pool, bool get_results) {
  * @param pool 
  */
 void yield() {
-    get_tdata()->curr_task->type = RESUME;
-    DEBUG("Yielding task %p.\n", get_tdata()->curr_task->handle);
-    SWAPCONTEXT(&get_tdata()->curr_task->context, &get_tdata()->yield_context); // doesn't return
+    tdata_t *tdata = get_tdata();
+    tdata->curr_task->type = RESUME;
+    DEBUG("Yielding task %p.\n", tdata->curr_task->handle);
+    swapcontext(&tdata->curr_task->context, &tdata->yield_context); // doesn't return
     DEBUG("Resuming %p.\n", get_tdata()->curr_task->handle);
 }
 
 void *tpool_task_await(tpool_handle *handle) {
     DEBUG("Awaiting handle %p.\n", handle);
+    pthread_mutex_lock(&handle->mutex);
     if (get_tdata()) {
-        pthread_mutex_lock(&handle->mutex);
-        while (handle->status == WAITING && num_queued_tasks(handle->pool) > 0) {
+        while (handle->status == WAITING) {
             pthread_mutex_unlock(&handle->mutex);
             yield(); // Potentially returns in different thread.
             pthread_mutex_lock(&handle->mutex);
         }
     } else {
-        pthread_mutex_lock(&handle->mutex);
-    }
-    while (handle->status == WAITING) {
-        pthread_cond_wait(&handle->result_cond, &handle->mutex);
+        while (handle->status == WAITING) {
+            pthread_cond_wait(&handle->result_cond, &handle->mutex);
+        }
     }
     void *result = handle->result;
     pthread_mutex_unlock(&handle->mutex);
@@ -465,8 +429,7 @@ int main() {
     // tpool_pool *pool = tpool_init(0);
     pool = tpool_init(0);
 
-    // for (size_t i = 0; i < 100; i++) {
-    uintptr_t f = (uintptr_t) fibonacci((void *) 20);
+    uintptr_t f = (uintptr_t) fibonacci((void *) 25);
     printf("%lu\n", f);
 
     tpool_close(pool, false);
