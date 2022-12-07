@@ -11,7 +11,15 @@ typedef struct tpool_list {
     void **data;
 } tpool_list;
 
-typedef struct tpool_queue tpool_queue;
+typedef struct tpool_queue {
+    pthread_mutex_t body_mutex;
+    tpool_list in;
+    tpool_list out;
+    size_t count;
+    pthread_mutex_t new_mut;
+    pthread_cond_t new_cond;
+    bool unblock;
+} tpool_queue;
 
 void tpool_list_init(tpool_list *list);
 

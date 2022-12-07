@@ -13,18 +13,6 @@
 #include "threadpool.h"
 #include "queue.h"
 
-struct tpool_queue {
-    pthread_mutex_t body_mutex;
-    tpool_list in;
-    tpool_list out;
-    size_t count;
-    pthread_mutex_t new_mut;
-    pthread_cond_t new_cond;
-    bool closing;
-    size_t n_waiting;
-    size_t wait_threshold;
-};
-
 struct tpool_handle {
     tpool_task_status status;
     pthread_mutex_t mutex;
@@ -269,7 +257,6 @@ tpool_pool *tpool_init(size_t size) {
 
     pool->task_queue = tpool_queue_init();
     pool->result_queue = tpool_queue_init();
-    pool->task_queue->wait_threshold = size;
 
     // spawn the thread pool
     for (size_t i = 0; i < size; i++) {

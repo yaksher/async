@@ -7,16 +7,6 @@
 const size_t TPOOL_MIN_LIST_SIZE = 4;
 const size_t TPOOL_LIST_SCALE = 2;
 
-struct tpool_queue {
-    pthread_mutex_t body_mutex;
-    tpool_list in;
-    tpool_list out;
-    size_t count;
-    pthread_mutex_t new_mut;
-    pthread_cond_t new_cond;
-    bool unblock;
-};
-
 static void *lock_get(pthread_mutex_t *mutex, void **loc) {
     pthread_mutex_lock(mutex);
     void *item = *loc;
