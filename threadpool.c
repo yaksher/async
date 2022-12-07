@@ -45,12 +45,6 @@ typedef struct {
     ucontext_t context;
 } task_t;
 
-// struct task_t {
-//     void *arg;
-//     tpool_work work;
-//     tpool_handle *handle;
-// };
-
 struct tpool_pool {
     tpool_queue *task_queue;
     tpool_queue *result_queue;
@@ -64,7 +58,8 @@ struct tpool_pool {
 };
 
 typedef struct thread_data {
-    ucontext_t *yield_context;
+    ucontext_t yield_context;
+    ucontext_t return_context;
     void *aux1;
     void *aux2;
     size_t id;
@@ -193,6 +188,7 @@ static void task_wrapper() {
     void *out = work(arg); // Calling thread and returning thread may differ.
     DEBUG("Finished with ret %p\n", out);
     get_tdata()->aux1 = out;
+    SETCONTEXT(&get_tdata()->return_context);
 }
 
 /**
@@ -208,7 +204,6 @@ static void task_wrapper() {
  * @return void* 
  */
 static void *run_task(task_t *task) {
-    ucontext_t return_context;
     get_tdata()->curr_task = task;
     if (task->type == INITIAL) {
         DEBUG("Initializing task %p\n", task->handle);
@@ -227,8 +222,7 @@ static void *run_task(task_t *task) {
     } else {
         ERROR("Invalid task type.\n");
     }
-    task->context.uc_link = &return_context;
-    SWAPCONTEXT(&return_context, &task->context);
+    SWAPCONTEXT(&get_tdata()->return_context, &task->context);
 
     DEBUG("Returning from task %p with value %p\n", task->handle, get_tdata()->aux1);
     free(get_tdata()->curr_task->stack);
@@ -288,9 +282,7 @@ static void *pool_thread(void *arg) {
     tpool_pool *pool = *(tpool_pool **) arg;
     free(arg);
 
-    ucontext_t yield_context;
-    get_tdata()->yield_context = &yield_context;
-    GETCONTEXT(&yield_context);
+    GETCONTEXT(&get_tdata()->yield_context);
     DEBUG("Passed yield context.\n");
     if (get_tdata()->curr_task != NULL) {
         DEBUG("Enqueued task.\n");
@@ -383,7 +375,7 @@ tpool_list *tpool_close(tpool_pool *pool, bool get_results) {
 void yield() {
     get_tdata()->curr_task->type = RESUME;
     DEBUG("Yielding task %p.\n", get_tdata()->curr_task->handle);
-    SWAPCONTEXT(&get_tdata()->curr_task->context, get_tdata()->yield_context); // doesn't return
+    SWAPCONTEXT(&get_tdata()->curr_task->context, &get_tdata()->yield_context); // doesn't return
     DEBUG("Resuming %p.\n", get_tdata()->curr_task->handle);
 }
 
@@ -473,10 +465,9 @@ int main() {
     // tpool_pool *pool = tpool_init(0);
     pool = tpool_init(0);
 
-    for (size_t i = 0; i < 100; i++) {
-        uintptr_t f = (uintptr_t) fibonacci((void *) 5);
-        // printf("%lu\n", f);
-    }
+    // for (size_t i = 0; i < 100; i++) {
+    uintptr_t f = (uintptr_t) fibonacci((void *) 20);
+    printf("%lu\n", f);
 
     tpool_close(pool, false);
 }
