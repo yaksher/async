@@ -33,11 +33,8 @@ struct tpool_handle {
     void *result;
 };
 
-typedef enum {INITIAL, RESUME} task_type_t;
-
-
 typedef struct {
-    task_type_t type;
+    enum {INITIAL, RESUME} type;
     void *arg;
     tpool_work work;
     tpool_handle *handle;
@@ -62,7 +59,6 @@ typedef struct thread_data {
     ucontext_t return_context;
     size_t id;
     task_t *curr_task;
-    void *aux;
     pthread_t self;
 } tdata_t;
 
@@ -153,7 +149,7 @@ static void task_wrapper() {
     tdata_t *tdata = get_tdata();
     void *out = tdata->curr_task->work(tdata->curr_task->arg);
     tdata = get_tdata();
-    tdata->aux = out;
+    tdata->curr_task->arg = out;
     setcontext(&tdata->return_context);
 }
 
@@ -191,11 +187,12 @@ static void *run_task(task_t *task) {
 
     tdata = get_tdata();
 
-    DEBUG("Returning from task %p with value %p\n", task->handle, tdata->aux1);
+    DEBUG("Returning from task %p with value %p\n", task->handle, tdata->curr_task->arg);
+    void *out = tdata->curr_task->arg;
     free(tdata->curr_task->stack);
     free(tdata->curr_task);
     tdata->curr_task = NULL;
-    return tdata->aux;
+    return out;
 }
 
 static bool launch_task(tpool_pool *pool) {
