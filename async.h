@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <assert.h>
 
 #include "threadpool.h"
 
@@ -20,11 +21,6 @@ void async_close();
 
 typedef int _async_NOTHING[0];
 
-#define _ASYNC_CASSERT(predicate) _impl_CASSERT_LINE(predicate,__LINE__)
-
-#define _impl_CASSERT_LINE(predicate, line) \
-    typedef char assertion_failed_##line[2*!!(predicate)-1];
-
 #define _ASYNC_ARG_STRUCT_8(FUNC, T0, N0, T1, N1, T2, N2, T3, N3, T4, N4, T5, N5, T6, N6, T7, N7, ...)\
 typedef struct {\
     T0 N0;\
@@ -40,16 +36,16 @@ typedef struct {\
 #define ASYNC_8(RET_TYPE, FUNC, T0, N0, T1, N1, T2, N2, T3, N3, T4, N4, T5, N5, T6, N6, T7, N7, ...)\
 RET_TYPE _async_int_##FUNC(T0 N0, T1 N1, T2 N2, T3 N3, T4 N4, T5 N5, T6 N6, T7 N7);\
 _ASYNC_ARG_STRUCT_8(FUNC, T0, N0, T1, N1, T2, N2, T3, N3, T4, N4, T5, N5, T6, N6, T7, N7);\
-_ASYNC_CASSERT(sizeof(RET_TYPE) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T0) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T1) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T2) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T3) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T4) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T5) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T6) <= sizeof(void *))\
-_ASYNC_CASSERT(sizeof(T7) <= sizeof(void *))\
 void *_async_int_vv_##FUNC(void *arg) {\
+    assert(sizeof(RET_TYPE) <= sizeof(void *));\
+    assert(sizeof(T0) <= sizeof(void *));\
+    assert(sizeof(T1) <= sizeof(void *));\
+    assert(sizeof(T2) <= sizeof(void *));\
+    assert(sizeof(T3) <= sizeof(void *));\
+    assert(sizeof(T4) <= sizeof(void *));\
+    assert(sizeof(T5) <= sizeof(void *));\
+    assert(sizeof(T6) <= sizeof(void *));\
+    assert(sizeof(T7) <= sizeof(void *));\
     _async_##FUNC##_args *ARGS = arg;\
     RET_TYPE ret = _async_int_##FUNC(\
         ARGS->N0, ARGS->N1, ARGS->N2, ARGS->N3,\
@@ -104,8 +100,8 @@ ASYNC_8(RET_TYPE, FUNC, ARGS,\
 
 #define ASYNC_NOARGS(RET_TYPE, FUNC)\
 RET_TYPE _async_int_##FUNC();\
-_ASYNC_CASSERT(sizeof(RET_TYPE) <= sizeof(void *))\
 void *_async_int_vv_##FUNC(void *arg) {\
+    assert(sizeof(RET_TYPE) <= sizeof(void *));\
     (void) arg;\
     RET_TYPE ret = _async_int_##FUNC();\
     return *(void **) &ret;\
