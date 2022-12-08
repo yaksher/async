@@ -54,7 +54,8 @@ void *_async_int_vv_##FUNC(void *arg) {\
     RET_TYPE ret = _async_int_##FUNC(\
         ARGS->N0, ARGS->N1, ARGS->N2, ARGS->N3,\
         ARGS->N4, ARGS->N5, ARGS->N6, ARGS->N7);\
-    return (void *) ret;\
+    free(arg);\
+    return *(void **) &ret;\
 }\
 async_handle *FUNC(T0 N0, ...) {\
     _async_##FUNC##_args *_async_arg = malloc(sizeof(_async_##FUNC##_args));\
@@ -107,7 +108,7 @@ _ASYNC_CASSERT(sizeof(RET_TYPE) <= sizeof(void *))\
 void *_async_int_vv_##FUNC(void *arg) {\
     (void) arg;\
     RET_TYPE ret = _async_int_##FUNC();\
-    return (void *) ret;\
+    return *(void **) &ret;\
 }\
 async_handle *FUNC() {\
     return async_run(_async_int_vv_##FUNC, NULL);\
