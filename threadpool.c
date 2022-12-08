@@ -378,33 +378,6 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg, t
     return (void *) handle > (void *) DISCARD_RESULT ? handle : NULL;
 }
 
-tpool_pool *pool;
-
-void *fibonacci(void *arg) {
-    uintptr_t val = (uintptr_t) arg;
-    if (val == 0) {
-        return (void *) 0;
-    } else if (val == 1) {
-        return (void *) 1;
-    }
-    tpool_handle *handle = tpool_task_enqueue(pool, fibonacci, (void *) val - 2, HANDLE);
-    uintptr_t n1 = (uintptr_t) fibonacci((void *) val - 1);
-    uintptr_t n2 = (uintptr_t) tpool_task_await(handle);
-    return (void *) n1 + n2;
-}
-
-int main() {
-    // tpool_pool *pool = tpool_init(0);
-    pool = tpool_init(0);
-
-    // for (size_t i = 0; i < 100; i++) {
-        uintptr_t f = (uintptr_t) fibonacci((void *) 10);
-        printf("%lu\n", f);
-    // }
-
-    tpool_close(pool, false);
-}
-
 tpool_list *tpool_wait(tpool_pool *pool, bool get_results) {
     (void) pool;
     (void) get_results;
