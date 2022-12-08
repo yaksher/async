@@ -2,13 +2,13 @@ CC = clang
 CLEAN_COMMAND = rm -rf threadpool threadpool.o bin/* out/*
 
 ifdef DEBUG
-  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -O3 -pthread -g -fsanitize=thread
+  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -Wno-unused-parameter -O3 -pthread -g -fsanitize=thread
   ifeq ($(wildcard .debug),)
     $(shell $(CLEAN_COMMAND))
     $(shell touch .debug)
   endif
 else
-  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -O3 -pthread 
+  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -Wno-unused-parameter -O3 -pthread 
   ifneq ($(wildcard .debug),)
     $(shell $(CLEAN_COMMAND) .debug)
   endif
