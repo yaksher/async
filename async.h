@@ -12,7 +12,7 @@ typedef void *(*async_work)(void *arg);
 
 void async_init(size_t num_threads);
 
-__attribute((noinline)) async_handle *async_run(async_work work, void *arg);
+async_handle *async_run(async_work work, void *arg);
 
 void *async_await(async_handle *handle);
 
