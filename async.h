@@ -101,4 +101,17 @@ ASYNC_8(RET_TYPE, FUNC, ARGS,\
     _async_NOTHING, _async_PLACEHOLDER_4, _async_NOTHING, _async_PLACEHOLDER_5,\
     _async_NOTHING, _async_PLACEHOLDER_6, _async_NOTHING, _async_PLACEHOLDER_7)
 
+#define ASYNC_NOARGS(RET_TYPE, FUNC)\
+RET_TYPE _async_int_##FUNC();\
+_ASYNC_CASSERT(sizeof(RET_TYPE) <= sizeof(void *))\
+void *_async_int_vv_##FUNC(void *arg) {\
+    (void) arg;\
+    RET_TYPE ret = _async_int_##FUNC();\
+    return (void *) ret;\
+}\
+async_handle *FUNC() {\
+    return async_run(_async_int_vv_##FUNC, NULL);\
+}\
+RET_TYPE _async_int_##FUNC()\
+
 #endif
