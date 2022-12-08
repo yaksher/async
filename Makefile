@@ -16,10 +16,10 @@ endif
 
 all: run
 
-run: bin/threadpool
+run: bin/test
 	$^
 
-bin/threadpool: out/threadpool.o out/queue.o
+bin/test: out/test.o out/async.o out/threadpool.o out/queue.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 out/%.o: %.c
