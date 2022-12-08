@@ -1,8 +1,6 @@
 #ifndef TPOOL__ASYNC_MACROS_H
 #define TPOOL__ASYNC_MACROS_H
 
-typedef int _async_NOTHING[0];
-
 #define _ASYNC_8(T_RET, FUNC, T0, N0, T1, N1, T2, N2, T3, N3, T4, N4, T5, N5, T6, N6, T7, N7)\
 T_RET _async_int_##FUNC(T0 N0, T1 N1, T2 N2, T3 N3, T4 N4, T5 N5, T6 N6, T7 N7);\
 typedef struct {\
