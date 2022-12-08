@@ -112,6 +112,8 @@ void *_async_int_vv_##FUNC(void *arg) {\
 async_handle *FUNC() {\
     return async_run(_async_int_vv_##FUNC, NULL);\
 }\
-RET_TYPE _async_int_##FUNC()\
+RET_TYPE _async_int_##FUNC()
+
+#define AWAIT(EXPR...) async_await(EXPR)
 
 #endif
