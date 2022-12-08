@@ -178,8 +178,7 @@ T_RET _async_int_##FUNC();\
 void *_async_int_vv_##FUNC(void *arg) {\
     assert(sizeof(T_RET) <= sizeof(void *));\
     (void) arg;\
-    T_RET ret = _async_int_##FUNC();\
-    return *(void **) &ret;\
+    return ((union {T_RET x; void *y;}) {.x = _async_int_##FUNC()}).y;;\
 }\
 async_handle *FUNC() {\
     return async_run(_async_int_vv_##FUNC, NULL);\
