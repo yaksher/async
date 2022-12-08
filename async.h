@@ -33,11 +33,11 @@ typedef struct {\
     T7 N7;\
 } _async_##FUNC##_args
 
-#define ASYNC_8(RET_TYPE, FUNC, T0, N0, T1, N1, T2, N2, T3, N3, T4, N4, T5, N5, T6, N6, T7, N7, ...)\
-RET_TYPE _async_int_##FUNC(T0 N0, T1 N1, T2 N2, T3 N3, T4 N4, T5 N5, T6 N6, T7 N7);\
+#define ASYNC_8(T_RET, FUNC, T0, N0, T1, N1, T2, N2, T3, N3, T4, N4, T5, N5, T6, N6, T7, N7, ...)\
+T_RET _async_int_##FUNC(T0 N0, T1 N1, T2 N2, T3 N3, T4 N4, T5 N5, T6 N6, T7 N7);\
 _ASYNC_ARG_STRUCT_8(FUNC, T0, N0, T1, N1, T2, N2, T3, N3, T4, N4, T5, N5, T6, N6, T7, N7);\
 void *_async_int_vv_##FUNC(void *arg) {\
-    assert(sizeof(RET_TYPE) <= sizeof(void *));\
+    assert(sizeof(T_RET) <= sizeof(void *));\
     assert(sizeof(T0) <= sizeof(void *));\
     assert(sizeof(T1) <= sizeof(void *));\
     assert(sizeof(T2) <= sizeof(void *));\
@@ -47,11 +47,11 @@ void *_async_int_vv_##FUNC(void *arg) {\
     assert(sizeof(T6) <= sizeof(void *));\
     assert(sizeof(T7) <= sizeof(void *));\
     _async_##FUNC##_args *ARGS = arg;\
-    RET_TYPE ret = _async_int_##FUNC(\
+    T_RET ret = _async_int_##FUNC(\
         ARGS->N0, ARGS->N1, ARGS->N2, ARGS->N3,\
         ARGS->N4, ARGS->N5, ARGS->N6, ARGS->N7);\
     free(arg);\
-    return *(void **) &ret;\
+    return ((union {T_RET x; void *y;}) {.x = ret}).y;\
 }\
 async_handle *FUNC(T0 N0, ...) {\
     _async_##FUNC##_args *_async_arg = malloc(sizeof(_async_##FUNC##_args));\
@@ -89,28 +89,28 @@ async_handle *FUNC(T0 N0, ...) {\
     va_end(_async_args);\
     return async_run(_async_int_vv_##FUNC, _async_arg);\
 }\
-RET_TYPE _async_int_##FUNC(T0 N0, T1 N1, T2 N2, T3 N3, T4 N4, T5 N5, T6 N6, T7 N7)
+T_RET _async_int_##FUNC(T0 N0, T1 N1, T2 N2, T3 N3, T4 N4, T5 N5, T6 N6, T7 N7)
 
-#define ASYNC(RET_TYPE, FUNC, ARGS...)\
-ASYNC_8(RET_TYPE, FUNC, ARGS,\
+#define ASYNC(T_RET, FUNC, ARGS...)\
+ASYNC_8(T_RET, FUNC, ARGS,\
     _async_NOTHING, _async_PLACEHOLDER_0, _async_NOTHING, _async_PLACEHOLDER_1,\
     _async_NOTHING, _async_PLACEHOLDER_2, _async_NOTHING, _async_PLACEHOLDER_3,\
     _async_NOTHING, _async_PLACEHOLDER_4, _async_NOTHING, _async_PLACEHOLDER_5,\
     _async_NOTHING, _async_PLACEHOLDER_6, _async_NOTHING, _async_PLACEHOLDER_7)
 
-#define ASYNC_NOARGS(RET_TYPE, FUNC)\
-RET_TYPE _async_int_##FUNC();\
+#define ASYNC_NOARGS(T_RET, FUNC)\
+T_RET _async_int_##FUNC();\
 void *_async_int_vv_##FUNC(void *arg) {\
-    assert(sizeof(RET_TYPE) <= sizeof(void *));\
+    assert(sizeof(T_RET) <= sizeof(void *));\
     (void) arg;\
-    RET_TYPE ret = _async_int_##FUNC();\
+    T_RET ret = _async_int_##FUNC();\
     return *(void **) &ret;\
 }\
 async_handle *FUNC() {\
     return async_run(_async_int_vv_##FUNC, NULL);\
 }\
-RET_TYPE _async_int_##FUNC()
+T_RET _async_int_##FUNC()
 
-#define AWAIT(EXPR...) async_await(EXPR)
+#define AWAIT(T, EXPR...) ((union {T x; void *y;}) {.y = async_await(EXPR)}).x
 
 #endif
