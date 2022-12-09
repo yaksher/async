@@ -2,8 +2,8 @@
 
 #include "stdio.h"
 
-async(intptr_t, square, intptr_t, arg) {
-    return arg * arg;
+async(intptr_t, prod, intptr_t, n1, intptr_t, n2) {
+    return n1 * n2;
 }
 
 async(intptr_t, fibonacci, intptr_t, n) {
@@ -19,6 +19,7 @@ async(void *, fake_malloc) {
 
 int main() {
     async_init(0);
+    printf("%ld\n", await(intptr_t, prod(10, 20)));
     printf("%ld\n", await(intptr_t, fibonacci(10)));
     printf("%p\n", await(void *, fake_malloc()));
     async_close();
