@@ -195,8 +195,26 @@ T_RET _async_int_##FUNC()
         INVALID_ARG_COUNT, _ASYNC_5, INVALID_ARG_COUNT, _ASYNC_4, INVALID_ARG_COUNT, _ASYNC_3,\
         INVALID_ARG_COUNT, _ASYNC_2, INVALID_ARG_COUNT, _ASYNC_1, _ASYNC_0)
 
-#define ASYNC(T_RET, FUNC, ARGS...) _ASYNC_DISPATH(ARGS)(T_RET, FUNC, ##ARGS)
+#define _impl_ASYNC(T_RET, FUNC, ARGS...) _ASYNC_DISPATH(ARGS)(T_RET, FUNC, ##ARGS)
 
-#define AWAIT(T, EXPR...) ((union {T x; void *y;}) {.y = async_await(EXPR)}).x
+#define _impl_AWAIT(T, EXPR...) ((union {T x; void *y;}) {.y = async_await(EXPR)}).x
+
+#define _impl_YIELD tpool_yield
+
+#define _impl_YIELD_UNTIL(EXPR...) do {\
+    while (!(EXPR)) {\
+        _impl_YIELD();\
+    }\
+} while (0);
+
+#define _impl_YIELD_WHILE(EXPR...) do {\
+    while (EXPR) {\
+        _impl_YIELD();\
+    }\
+} while (0);
+
+#define _impl_DO_YIELD_WHILE(EXPR...) do {\
+    _impl_YIELD();\
+} while (EXPR);
 
 #endif

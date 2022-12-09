@@ -32,6 +32,16 @@ tpool_list *tpool_close(tpool_pool *pool, bool get_results);
 tpool_list *tpool_map(tpool_pool *map, tpool_list *list, tpool_work func);
 
 /**
+ * @brief Yields execution to the threadpool, enqueueing a resume task so that
+ * the threadpool can resume execution of the current task eventually.
+ * 
+ * Assumes the calling thread is a threadpool thread.
+ * 
+ * May return in different thread than the caller, but returns exactly once.
+ */
+void tpool_yield();
+
+/**
  * Gets the result of a future.
  */
 void *tpool_task_await(tpool_handle *handle);

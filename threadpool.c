@@ -307,11 +307,11 @@ tpool_list *tpool_close(tpool_pool *pool, bool get_results) {
  * @brief Yields execution to the threadpool, enqueueing a resume task so that
  * the threadpool can resume execution of the current task eventually.
  * 
- * May return in different thread than the caller, but returns exactly once.
+ * Assumes the calling thread is a threadpool thread.
  * 
- * @param pool 
+ * May return in different thread than the caller, but returns exactly once.
  */
-void yield() {
+void tpool_yield() {
     tdata_t *tdata = get_tdata();
     tdata->curr_task->type = RESUME;
     DEBUG("Yielding task %p.\n", tdata->curr_task->handle);
