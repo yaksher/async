@@ -23,7 +23,7 @@
  * Asserts that sizeof(return_type) <= sizeof(void *).
  * For larger returns, heap-allocate memory and return a pointer.
  */
-#define async(T, FUNC, ARGS...) _impl_ASYNC(T, FUNC, ARGS)
+#define async(T, FUNC, ARGS...) _impl_ASYNC(T, FUNC, ##ARGS)
 
 /**
  * @brief The await macro is used to wait for the result of an asynchronous task
