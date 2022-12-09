@@ -2,7 +2,7 @@ CC = clang
 CLEAN_COMMAND = rm -rf threadpool threadpool.o bin/* out/*
 
 ifdef DEBUG
-  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -O3 -pthread -g -fsanitize=thread
+  CFLAGS = -Wall -Wextra -Wno-deprecated-declarations -O3 -pthread -g -fsanitize=thread,undefined
   ifeq ($(wildcard .debug),)
     $(shell $(CLEAN_COMMAND))
     $(shell touch .debug)
