@@ -47,9 +47,6 @@
  * 
  * `yield_until(condition)` is equivalent to `yield_while(!(condition))`.
  * 
- * `do_yield_while(condition)` will yield once and then until the condition is
- * false.
- * 
  * Should only be used inside of asynchronous functions and will result in
  * unspecified behavior if used outside of an asynchronous function.
  * 
