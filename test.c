@@ -10,7 +10,9 @@ async(intptr_t, fibonacci, intptr_t, n) {
     if (n <= 1) {
         return n;
     }
-    return await(intptr_t, fibonacci(n - 1)) + await(intptr_t, fibonacci(n - 2));
+    async_handle *h1 = fibonacci(n - 1);
+    async_handle *h2 = fibonacci(n - 2);
+    return await(intptr_t, h1) + await(intptr_t, h2);
 }
 
 async(void *, fake_malloc) {
@@ -20,7 +22,7 @@ async(void *, fake_malloc) {
 int main() {
     async_init(0);
     printf("%ld\n", await(intptr_t, prod(10, 20)));
-    printf("%ld\n", await(intptr_t, fibonacci(10)));
+    printf("%ld\n", await(intptr_t, fibonacci(20)));
     printf("%p\n", await(void *, fake_malloc()));
     async_close();
     return 0;
