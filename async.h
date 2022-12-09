@@ -62,7 +62,6 @@
 #define yield() _impl_YIELD()
 #define yield_until(COND...) _impl_YIELD_UNTIL(COND)
 #define yield_while(COND...) _impl_YIELD_WHILE(COND)
-#define do_yield_while(COND...) _impl_DO_YIELD_WHILE(COND)
 
 typedef tpool_handle async_handle;
 typedef void *(*async_work)(void *arg);

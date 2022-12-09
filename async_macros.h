@@ -205,16 +205,12 @@ T_RET _async_int_##FUNC()
     while (!(EXPR)) {\
         _impl_YIELD();\
     }\
-} while (0);
+} while (0)
 
 #define _impl_YIELD_WHILE(EXPR...) do {\
     while (EXPR) {\
         _impl_YIELD();\
     }\
-} while (0);
-
-#define _impl_DO_YIELD_WHILE(EXPR...) do {\
-    _impl_YIELD();\
-} while (EXPR);
+} while (0)
 
 #endif
