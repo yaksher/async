@@ -12,7 +12,7 @@ void async_init(size_t num_threads) {
 }
 
 async_handle *async_run(async_work fn, void *arg) {
-    return (async_handle *) tpool_task_enqueue(pool, fn, arg, HANDLE);
+    return (async_handle *) tpool_task_enqueue(pool, fn, arg);
 }
 
 void *async_await(async_handle *handle) {
@@ -22,7 +22,7 @@ void *async_await(async_handle *handle) {
 void async_close() {
     pthread_mutex_lock(&pool_mutex);
     if (pool != NULL) {
-        tpool_close(pool, false);
+        tpool_close(pool);
         pool = NULL;
     }
     pthread_mutex_unlock(&pool_mutex);
