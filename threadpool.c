@@ -37,6 +37,7 @@ struct tpool_pool {
 };
 
 typedef struct thread_data {
+    bool init;
     ucontext_t yield_context;
     ucontext_t return_context;
     size_t id;
@@ -45,7 +46,7 @@ typedef struct thread_data {
 } tdata_t;
 
 #define TPOOL_DEFAULT_SIZE 16
-__thread tdata_t *tdata = NULL;
+__thread tdata_t tdata = {.init = false};
 
 static tdata_t *get_tdata();
 
@@ -104,10 +105,13 @@ static tdata_t *get_tdata();
 #define UNREACHABLE(...) ERROR("Unreachable.\n")
 
 static tdata_t *get_tdata() {
-    if ((volatile tdata_t *) tdata != NULL && !pthread_equal(pthread_self(), tdata->self)) {
-        ERROR("Thread contexted switched without properly handling thread local data.");
+    if (((volatile tdata_t) tdata).init) {
+        ASSERT(pthread_equal(pthread_self(), tdata.self)
+            && "Thread contexted switched without properly handling thread local data.");
+        return &tdata;
+    } else {
+        return NULL;
     }
-    return tdata;
 }
 
 #define PAGE_SIZE 4096
@@ -191,21 +195,21 @@ static bool launch_task(tpool_pool *pool) {
 }
 
 static void *pool_thread(void *arg) {
-    tdata = calloc(1, sizeof(tdata_t));
-    tdata->self = pthread_self();
-    tdata->id = *(size_t *) (arg + sizeof(tpool_pool *));
-    tdata->curr_task = NULL;
+    tdata.init = true;
+    tdata.self = pthread_self();
+    tdata.id = *(size_t *) (arg + sizeof(tpool_pool *));
+    tdata.curr_task = NULL;
     // pthread_setspecific(thread_local_key, tdata);
 
     tpool_pool *pool = *(tpool_pool **) arg;
     free(arg);
 
-    getcontext(&tdata->yield_context);
+    getcontext(&tdata.yield_context);
     DEBUG("Passed yield context.\n");
-    if (tdata->curr_task != NULL) {
+    if (tdata.curr_task != NULL) {
         DEBUG("Enqueued task.\n");
-        tpool_enqueue(pool->task_queue, tdata->curr_task);
-        tdata->curr_task = NULL;
+        tpool_enqueue(pool->task_queue, tdata.curr_task);
+        tdata.curr_task = NULL;
     }
     while (true) {
         if (launch_task(pool)) {
