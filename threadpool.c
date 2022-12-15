@@ -312,7 +312,9 @@ void *tpool_task_await(tpool_handle *handle) {
     if (get_tdata()) {
         while (true) {
             pthread_mutex_unlock(&handle->mutex);
+            tpool_atomic_end();
             tpool_yield(); // Potentially returns in different thread.
+            tpool_atomic_start();
             pthread_mutex_lock(&handle->mutex);
         }
     } else {
