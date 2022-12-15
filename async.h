@@ -121,13 +121,7 @@ void *async_await(async_handle *handle, struct timespec *timeout, void *timeout_
  * @brief Wrapper for async_await which takes timeout as a double representing
  * seconds instead of as a timespec.
  */
-void *async_await_double(async_handle *handle, double timeout, void *timeout_val) {
-    assert(timeout >= 0.0);
-    struct timespec ts;
-    ts.tv_sec = (time_t) timeout;
-    ts.tv_nsec = (long) ((timeout - ts.tv_sec) * 1e9);
-    return async_await(handle, &ts, timeout_val);
-}
+void *async_await_double(async_handle *handle, double timeout, void *timeout_val);
 
 /**
  * @brief Closes the global threadpool.

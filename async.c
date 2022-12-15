@@ -19,6 +19,14 @@ void *async_await(async_handle *handle, struct timespec *timeout, void *timeout_
     return tpool_task_await((tpool_handle *) handle, timeout, timeout_val);
 }
 
+void *async_await_double(async_handle *handle, double timeout, void *timeout_val) {
+    assert(timeout >= 0.0);
+    struct timespec ts;
+    ts.tv_sec = (time_t) timeout;
+    ts.tv_nsec = (long) ((timeout - ts.tv_sec) * 1e9);
+    return async_await(handle, &ts, timeout_val);
+}
+
 void async_close() {
     pthread_mutex_lock(&pool_mutex);
     if (pool != NULL) {
