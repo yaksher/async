@@ -327,7 +327,6 @@ void *tpool_task_await(tpool_handle *handle, struct timespec *timeout, void *tim
     if (timeout != NULL) {
         struct timespec start;
         clock_gettime(CLOCK_MONOTONIC, &start);
-        struct timespec end;
         end.tv_sec = start.tv_sec + timeout->tv_sec;
         end.tv_nsec = start.tv_nsec + timeout->tv_nsec;
         if (end.tv_nsec >= 1000000000) {
