@@ -206,7 +206,7 @@ T_RET _async_int_##FUNC()
  * Casts TIMEOUT to correct type for the given dispatch 
  */
 #define _AWAIT_TIMEOUT(T, EXPR, TIMEOUT, DEFAULT)\
-    _TYPECAST_CALL(T, void *, _Generic((TIMEOUT), double: async_await_double, struct timespec *: async_await), EXPR, TIMEOUT, DEFAULT)
+    _TYPECAST_CALL(T, void *, _Generic((TIMEOUT), default: async_await_double, struct timespec *: async_await), EXPR, TIMEOUT, DEFAULT)
 
 #define GET_4TH_ARG(A0, A1, A2, A3, ...) A3
 
