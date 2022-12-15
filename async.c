@@ -15,8 +15,8 @@ async_handle *async_run(async_work fn, void *arg) {
     return (async_handle *) tpool_task_enqueue(pool, fn, arg, HANDLE);
 }
 
-void *async_await(async_handle *handle) {
-    return tpool_task_await((tpool_handle *) handle);
+void *async_await(async_handle *handle, struct timespec *timeout, void *timeout_val) {
+    return tpool_task_await((tpool_handle *) handle, timeout, timeout_val);
 }
 
 void async_close() {

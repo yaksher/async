@@ -319,17 +319,43 @@ void tpool_yield() {
     DEBUG("Resuming %p.\n", get_tdata()->curr_task->handle);
 }
 
-void *tpool_task_await(tpool_handle *handle) {
+void *tpool_task_await(tpool_handle *handle, struct timespec *timeout, void *timeout_val) {
     DEBUG("Awaiting handle %p.\n", handle);
     pthread_mutex_lock(&handle->mutex);
-    if (get_tdata()) {
-        while (handle->status == WAITING) {
+    bool worker = get_tdata() != NULL;
+    struct timespec end;
+    if (timeout != NULL) {
+        struct timespec start;
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        struct timespec end;
+        end.tv_sec = start.tv_sec + timeout->tv_sec;
+        end.tv_nsec = start.tv_nsec + timeout->tv_nsec;
+        if (end.tv_nsec >= 1000000000) {
+            end.tv_sec++;
+            end.tv_nsec -= 1000000000;
+        }
+    }
+    while (handle->status == WAITING) {
+        if (worker) {
             pthread_mutex_unlock(&handle->mutex);
+            if (timeout != NULL) {
+                struct timespec now;
+                clock_gettime(CLOCK_MONOTONIC, &now);
+                if (now.tv_sec > end.tv_sec 
+                    || (now.tv_sec == end.tv_sec && now.tv_nsec >= end.tv_nsec)
+                ) {
+                    return timeout_val;
+                }
+            }
             tpool_yield(); // Potentially returns in different thread.
             pthread_mutex_lock(&handle->mutex);
-        }
-    } else {
-        while (handle->status == WAITING) {
+        } else if (timeout != NULL) {
+            bool timed_out = pthread_cond_timedwait(&handle->result_cond, &handle->mutex, &end);
+            if (timed_out) {
+                pthread_mutex_unlock(&handle->mutex);
+                return timeout_val;
+            }
+        } else {
             pthread_cond_wait(&handle->result_cond, &handle->mutex);
         }
     }

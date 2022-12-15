@@ -1,4 +1,5 @@
 #include <pthread.h>
+#include <stdbool.h>
 
 #include "queue.h"
 
@@ -42,9 +43,13 @@ tpool_list *tpool_map(tpool_pool *map, tpool_list *list, tpool_work func);
 void tpool_yield();
 
 /**
- * Gets the result of a future.
+ * Gets the result of a handle, waiting for at most timeout time.
+ * 
+ * If timeout is NULL, waits indefinitely.
+ * 
+ * If the task has not finished when timeout runs out, returns default.
  */
-void *tpool_task_await(tpool_handle *handle);
+void *tpool_task_await(tpool_handle *handle, struct timespec *timeout, void *timeout_val);
 
 /**
  * Enqueues a task with a task handle which can awaited.

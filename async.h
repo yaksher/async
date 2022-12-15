@@ -2,8 +2,6 @@
 #define _TP_ASYNC_H
 
 #include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
 #include <assert.h>
 
 #include "threadpool.h"
@@ -32,15 +30,27 @@ typedef void *(*async_work)(void *arg);
  * @brief The await macro is used to wait for the result of an asynchronous task
  * created by a function defined with the `async` macro.
  * 
- * Usage is `await(return_type, handle)`.
+ * Usage is `await(return_type, handle, [timeout, default])`.
+ * 
+ * Omitting the timeout argument or setting it to 0 will wait indefinitely,
+ * otherwise should be a `timespec` or a `double` representing seconds.
+ * 
+ * If timeout is specified, the default value must also be specified.
+ * 
+ * Guarantees that it waits at least as long as the timeout, but can be more.
  * 
  * For handles created directly by `async_run` rather than `async` functions,
  * behavior is undefined if `return_type` is not `void *`.
  * 
  * Evaluates to the result of the asynchronous task, yielding execution until
  * the task is complete.
+ * 
+ * If timeout is specified, returns a wrapper struct with a `bool success` indicating
+ * whether the task completed before the timeout and a `return_type val` field.
+ * 
+ * If timeout is not specified, returns the result of the task.
  */
-#define await(T, HANDLE...) _impl_AWAIT(T, HANDLE)
+#define await(T, HANDLE, TIMEOUT_DEFAULT...) _impl_AWAIT(T, HANDLE, ##TIMEOUT_DEFAULT)
 
 
 /**
@@ -87,9 +97,23 @@ async_handle *async_run(async_work work, void *arg);
  * The await macro is preferred for functions defined with the async macro.
  * 
  * @param handle The handle to the asynchronous task.
- * @return void* The result of the asynchronous task.
+ * @param timeout The timeout to wait for the task to complete.
+ * @param timeout_val The value to return if the timeout is reached.
+ * @return void* The result of the asynchronous task or default if timeout
  */
-void *async_await(async_handle *handle);
+void *async_await(async_handle *handle, struct timespec *timeout, void *timeout_val);
+
+/**
+ * @brief Wrapper for async_await which takes timeout as a double representing
+ * seconds instead of as a timespec.
+ */
+void *async_await_double(async_handle *handle, double timeout, void *timeout_val) {
+    assert(timeout >= 0.0);
+    struct timespec ts;
+    ts.tv_sec = (time_t) timeout;
+    ts.tv_nsec = (long) ((timeout - ts.tv_sec) * 1e9);
+    return async_await(handle, &ts, timeout_val);
+}
 
 /**
  * @brief Closes the global threadpool.

@@ -197,7 +197,22 @@ T_RET _async_int_##FUNC()
 
 #define _impl_ASYNC(T_RET, FUNC, ARGS...) _ASYNC_DISPATH(ARGS)(T_RET, FUNC, ##ARGS)
 
-#define _impl_AWAIT(T, EXPR...) ((union {T x; void *y;}) {.y = async_await(EXPR)}).x
+#define _TYPECAST_CALL(T, R, F, ARGS...) ((union {T x; R y;}) {.y = F(ARGS)}).x
+
+#define _AWAIT_NOTIMEOUT(T, EXPR) _TYPECAST_CALL(T, void *, async_await, EXPR, NULL, NULL)
+
+#define _AWAIT_TIMEOUT(T, EXPR, TIMEOUT, DEFAULT)\
+    (((uintptr_t) (TIMEOUT) == (TIMEOUT))\
+    ? _TYPECAST_CALL(T, void *, async_await, EXPR, TIMEOUT, DEFAULT)\
+    : _TYPECAST_CALL(T, void *, async_await_double, EXPR, TIMEOUT, DEFAULT))
+
+#define GET_4TH_ARG(A0, A1, A2, A3, ...) A3
+
+#define _AWAIT_DISPATCH(EXPR, TIMEOUT_DEFAULT...)\
+    GET_4TH_ARG(EXPR, ##TIMEOUT_DEFAULT, _AWAIT_TIMEOUT, INVALID_ARG_COUNT, _AWAIT_NOTIMEOUT)
+
+#define _impl_AWAIT(T, EXPR, TIMEOUT_DEFAULT...)\
+    _AWAIT_DISPATCH(EXPR, ##TIMEOUT_DEFAULT)(T, EXPR, ##TIMEOUT_DEFAULT)
 
 #define _impl_YIELD tpool_yield
 
