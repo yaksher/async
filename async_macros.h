@@ -197,16 +197,18 @@ T_RET _async_int_##FUNC()
 
 #define _impl_ASYNC(T_RET, FUNC, ARGS...) _ASYNC_DISPATH(ARGS)(T_RET, FUNC, ##ARGS)
 
-#define _TYPECAST_CALL(T, R, F, ARGS...) ((union {T x; R y;}) {.y = F(ARGS)}).x
+#define _TYPECAST(T, R, E) ((union {T x; R y;}) {.y = (E)}).x
 
-#define _AWAIT_NOTIMEOUT(T, EXPR) _TYPECAST_CALL(T, void *, async_await, EXPR, NULL, NULL)
+#define _TYPECAST_BACK(T, R, E) ((union {T x; R y;}) {.x = (E)}).y
+
+#define _AWAIT_NOTIMEOUT(T, EXPR) _TYPECAST(T, void *, async_await(EXPR, NULL, NULL))
 
 /**
  * Checks if TIMEOUT is a pointer, then dispatches correct async_await.
  * Casts TIMEOUT to correct type for the given dispatch 
  */
 #define _AWAIT_TIMEOUT(T, EXPR, TIMEOUT, DEFAULT)\
-    _TYPECAST_CALL(T, void *, _Generic((TIMEOUT), struct timespec *: async_await, default: async_await_double), EXPR, TIMEOUT, DEFAULT)
+    _TYPECAST(T, void *, _Generic((TIMEOUT), struct timespec *: async_await, default: async_await_double)(EXPR, TIMEOUT, _TYPECAST_BACK(T, void *, DEFAULT)))
 
 #define GET_4TH_ARG(A0, A1, A2, A3, ...) A3
 
@@ -242,8 +244,9 @@ T_RET _async_int_##FUNC()
         _ASYNC_PREFIX(end).tv_nsec = _ASYNC_PREFIX(start).tv_nsec + _ASYNC_PREFIX(time)->tv_nsec;\
     } else {\
         double _ASYNC_PREFIX(time) = _Generic((TIME), struct timespec *: 0.0, default: (TIME));\
+        assert(_ASYNC_PREFIX(time) >= 0.0);\
         _ASYNC_PREFIX(end).tv_sec = _ASYNC_PREFIX(start).tv_sec + (time_t) _ASYNC_PREFIX(time);\
-        _ASYNC_PREFIX(end).tv_nsec = _ASYNC_PREFIX(start).tv_nsec + (long) (_ASYNC_PREFIX(time) - _ASYNC_PREFIX(end).tv_sec) * 1e9;\
+        _ASYNC_PREFIX(end).tv_nsec = _ASYNC_PREFIX(start).tv_nsec + (long) (_ASYNC_PREFIX(time) - (time_t) _ASYNC_PREFIX(time)) * 1e9;\
     }\
     if (_ASYNC_PREFIX(end).tv_nsec >= 1000000000) {\
         _ASYNC_PREFIX(end).tv_sec++;\
