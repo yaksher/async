@@ -33,7 +33,7 @@ async(int, sleep_5) {
 }
 
 int main() {
-    async_init(1);
+    async_init(0);
     printf("%ld\n", await(intptr_t, prod(10, 20)));
     printf("%ld\n", await(intptr_t, fibonacci(20)));
     printf("%d\n", *await(int *, malloc_int(20)));
