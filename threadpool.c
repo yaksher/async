@@ -1,5 +1,3 @@
-#define LOG_LEVEL 3
-
 #define _XOPEN_SOURCE
 #include <ucontext.h>
 
@@ -11,7 +9,7 @@
 #include "queue.h"
 
 struct tpool_handle {
-    enum {WAITING, FINISHED, ABORTING} status;
+    tpool_task_status status;
     pthread_mutex_t mutex;
     pthread_cond_t result_cond;
     tpool_pool *pool;
@@ -19,7 +17,7 @@ struct tpool_handle {
 };
 
 typedef struct {
-    enum {INITIAL, RESUME, ABORT} type;
+    enum {INITIAL, RESUME} type;
     void *arg;
     tpool_work work;
     tpool_handle *handle;
@@ -29,6 +27,7 @@ typedef struct {
 
 struct tpool_pool {
     tpool_queue *task_queue;
+    tpool_queue *result_queue;
 
     size_t task_count;
     pthread_mutex_t task_count_mutex;
@@ -71,6 +70,8 @@ static tdata_t *get_tdata();
         _LOG_INNER("ERROR: ", ARGS);\
         exit(*(volatile int *) 0xFA);\
     } while (0)
+
+#define LOG_LEVEL 2
 
 #if (LOG_LEVEL >= 1)
 #define WARN LOG
@@ -131,10 +132,6 @@ static void task_wrapper() {
     void *out = tdata->curr_task->work(tdata->curr_task->arg);
     tdata = get_tdata();
     tdata->curr_task->arg = out;
-    if (tdata->curr_task->handle->status == ABORTING) {
-        free(tdata->curr_task->handle);
-        tdata->curr_task->handle = NULL;
-    }
     setcontext(&tdata->return_context);
 }
 
@@ -165,9 +162,6 @@ static void *run_task(task_t *task) {
         makecontext(&task->context, task_wrapper, 0);
     } else if (task->type == RESUME) {
         DEBUG("Resuming task %p\n", task->handle);
-    } else if (task->type == ABORT) {
-        DEBUG("Aborting task %p\n", task->handle);
-        goto EXIT;
     } else {
         ERROR("Invalid task type.\n");
     }
@@ -176,7 +170,6 @@ static void *run_task(task_t *task) {
     tdata = get_tdata();
 
     DEBUG("Returning from task %p with value %p\n", task->handle, tdata->curr_task->arg);
-    EXIT:;
     void *out = tdata->curr_task->arg;
     free(tdata->curr_task->stack);
     free(tdata->curr_task);
@@ -184,41 +177,37 @@ static void *run_task(task_t *task) {
     return out;
 }
 
-void modify_task_count(tpool_pool *pool, int32_t mod) {
-    pthread_mutex_lock(&pool->task_count_mutex);
-    pool->task_count += mod;
-    DEBUG("Task count: %zu\n", pool->task_count);
-    if (pool->task_count == 0) {
-        pthread_cond_broadcast(&pool->task_count_cond);
-    }
-    pthread_mutex_unlock(&pool->task_count_mutex);
-}
-
 static bool launch_task(tpool_pool *pool) {
-    DEBUG("Waiting on task queue\n");
     task_t *task = tpool_dequeue(pool->task_queue);
-    DEBUG("Got task\n");
 
     if (task == NULL) {
         return true;
     }
 
+    tpool_handle *handle = task->handle;
     void *result = run_task(task); // May not return.
-    DEBUG("Task returned with value %p\n", result);
-    if (task->handle) {
-        tpool_handle *handle = task->handle;
+    if (handle == (void *) QUEUE_RESULT) {
+        tpool_enqueue(pool->result_queue, result);
+    }
+    else if (handle == (void *) DISCARD_RESULT) {
+        // Do nothing with result.
+    }
+    else {
         handle->result = result;
 
-        DEBUG("Trying to lock handle %p\n", handle);
         pthread_mutex_lock(&handle->mutex);
-        DEBUG("Locked handle %p\n", handle);
         handle->status = FINISHED;
         pthread_cond_broadcast(&handle->result_cond);
         pthread_mutex_unlock(&handle->mutex);
         DEBUG("Signaled handle %p\n", handle);
     }
-    modify_task_count(pool, -1);
-    DEBUG("Finished task\n");
+    pthread_mutex_lock(&pool->task_count_mutex);
+    pool->task_count--;
+    if (pool->task_count == 0) {
+        pthread_cond_broadcast(&pool->task_count_cond);
+    }
+    pthread_mutex_unlock(&pool->task_count_mutex);
+    DEBUG("Finished task %p\n", handle);
     return false;
 }
 
@@ -233,18 +222,11 @@ static void *pool_thread(void *arg) {
     free(arg);
 
     getcontext(&tdata->yield_context);
+    tdata_t *tdata = get_tdata();
+    DEBUG("Passed yield context.\n");
     if (tdata->curr_task != NULL) {
-        task_t *task = tdata->curr_task;
-        if (task->type == ABORT) {
-            DEBUG("Aborting task %p\n", task->handle);
-            free(task->stack);
-            free(task);
-            modify_task_count(pool, -1);
-        } else if (task->type == RESUME) {
-            tpool_enqueue(pool->task_queue, tdata->curr_task);
-        } else {
-            ERROR("Invalid task type.\n");
-        }
+        DEBUG("Enqueued task.\n");
+        tpool_enqueue(pool->task_queue, tdata->curr_task);
         tdata->curr_task = NULL;
     }
     while (true) {
@@ -268,6 +250,7 @@ tpool_pool *tpool_init(size_t size) {
     ASSERT(!pthread_mutex_init(&pool->task_count_mutex, NULL));
 
     pool->task_queue = tpool_queue_init();
+    pool->result_queue = tpool_queue_init();
 
     // spawn the thread pool
     for (size_t i = 0; i < size; i++) {
@@ -282,8 +265,7 @@ tpool_pool *tpool_init(size_t size) {
     return pool;
 }
 
-void tpool_close(tpool_pool *pool) {
-    DEBUG("Closing thread pool.\n");
+tpool_list *tpool_close(tpool_pool *pool, bool get_results) {
     size_t size = pool->pool_size;
     
     // queue will return NULL instead of blocking when empty
@@ -294,13 +276,31 @@ void tpool_close(tpool_pool *pool) {
     tpool_queue_unblock(pool->task_queue);
     pthread_mutex_unlock(&pool->task_count_mutex);
 
-    DEBUG("Waiting for threads to finish.\n");
-
     for (size_t i = 0; i < size; i++) {
         pthread_join(pool->threads[i], NULL);
     }
+    tpool_list *ret = NULL;
+    if (get_results) {
+        ret = malloc(sizeof(tpool_list));
+        tpool_list_init(ret);
+        // all other threads are closed at this point, no need for mutexes
+        tpool_list *in = &pool->result_queue->in;
+        tpool_list *out = &pool->result_queue->out;
+        for (
+            void *item = tpool_list_pop(out);
+            item != NULL;
+            item = tpool_list_pop(out)
+        ) {
+            tpool_list_push(ret, item);
+        }
+        for (size_t i = 0; i < in->count; i++) {
+            tpool_list_push(ret, in->data[i]);
+        }
+    }
     tpool_queue_free(pool->task_queue);
+    tpool_queue_free(pool->result_queue);
     free(pool);
+    return ret;
 }
 
 /**
@@ -313,82 +313,36 @@ void tpool_close(tpool_pool *pool) {
  */
 void tpool_yield() {
     tdata_t *tdata = get_tdata();
-    task_t *task = tdata->curr_task;
-    if (task->handle && task->handle->status == ABORTING) {
-        task->type = ABORT;
-        DEBUG("Aborting task %p.\n", tdata->curr_task->handle);
-        free(task->handle);
-        setcontext(&tdata->yield_context);
-    } else {
-        tdata->curr_task->type = RESUME;
-        DEBUG("Yielding task %p.\n", tdata->curr_task->handle);
-        swapcontext(&tdata->curr_task->context, &tdata->yield_context);
-        DEBUG("Resuming %p.\n", get_tdata()->curr_task->handle);
-    }
+    tdata->curr_task->type = RESUME;
+    DEBUG("Yielding task %p.\n", tdata->curr_task->handle);
+    swapcontext(&tdata->curr_task->context, &tdata->yield_context); // doesn't return
+    DEBUG("Resuming %p.\n", get_tdata()->curr_task->handle);
 }
 
-void abort_handle(tpool_handle *handle) {
-    DEBUG("Aborting handle %p.\n", handle);
-    DEBUG("Locking handle %p.\n", handle);
-    pthread_mutex_lock(&handle->mutex);
-    DEBUG("Locked handle %p.\n", handle);
-    handle->status = ABORTING;
-    pthread_mutex_unlock(&handle->mutex);
-    DEBUG("Unlocked handle %p.\n", handle);
-}
-
-void *tpool_task_await(tpool_handle *handle, struct timespec *timeout, void *timeout_val) {
+void *tpool_task_await(tpool_handle *handle) {
     DEBUG("Awaiting handle %p.\n", handle);
     pthread_mutex_lock(&handle->mutex);
-    bool worker = get_tdata() != NULL;
-    void *result;
-    struct timespec end;
-    if (timeout != NULL) {
-        struct timespec start;
-        clock_gettime(worker ? CLOCK_MONOTONIC : CLOCK_REALTIME, &start);
-        end.tv_sec = start.tv_sec + timeout->tv_sec;
-        end.tv_nsec = start.tv_nsec + timeout->tv_nsec;
-        if (end.tv_nsec >= 1000000000) {
-            end.tv_sec++;
-            end.tv_nsec -= 1000000000;
-        }
-    }
-    while (handle->status == WAITING) {
-        if (worker) {
-            if (timeout != NULL) {
-                struct timespec now;
-                clock_gettime(CLOCK_MONOTONIC, &now);
-                if (now.tv_sec > end.tv_sec 
-                    || (now.tv_sec == end.tv_sec && now.tv_nsec >= end.tv_nsec)
-                ) {
-                    abort_handle(handle);
-                    pthread_mutex_unlock(&handle->mutex);
-                    return timeout_val;
-                }
-            }
+    if (get_tdata()) {
+        while (handle->status == WAITING) {
             pthread_mutex_unlock(&handle->mutex);
             tpool_yield(); // Potentially returns in different thread.
             pthread_mutex_lock(&handle->mutex);
-        } else if (timeout != NULL) {
-            int timed_out = pthread_cond_timedwait(&handle->result_cond, &handle->mutex, &end);
-            if (timed_out) {
-                struct timespec now;
-                clock_gettime(CLOCK_REALTIME, &now);
-                abort_handle(handle);
-                pthread_mutex_unlock(&handle->mutex);
-                DEBUG("Timed out waiting on handle %p.\n", handle);
-                return timeout_val;
-            }
-        } else {
+        }
+    } else {
+        while (handle->status == WAITING) {
             pthread_cond_wait(&handle->result_cond, &handle->mutex);
         }
     }
-    result = handle->result;
+    void *result = handle->result;
     pthread_mutex_unlock(&handle->mutex);
     DEBUG("Done waiting on handle %p.\n", handle);
     free(handle);
 
     return result;
+}
+
+void *tpool_result_dequeue(tpool_pool *pool) {
+    return tpool_dequeue(pool->result_queue);
 }
 
 static tpool_handle *task_handle_init(tpool_pool *pool) {
@@ -417,7 +371,22 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg, t
     
     tpool_enqueue(pool->task_queue, task);
     
-    modify_task_count(pool, 1);
+    pthread_mutex_lock(&pool->task_count_mutex);
+    pool->task_count++;
+    pthread_mutex_unlock(&pool->task_count_mutex);
 
     return (void *) handle > (void *) DISCARD_RESULT ? handle : NULL;
+}
+
+tpool_list *tpool_wait(tpool_pool *pool, bool get_results) {
+    (void) pool;
+    (void) get_results;
+    UNIMPLEMENTED();
+}
+
+tpool_list *tpool_map(tpool_pool *pool, tpool_list *list, tpool_work func) {
+    (void) pool;
+    (void) list;
+    (void) func;
+    UNIMPLEMENTED();
 }

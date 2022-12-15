@@ -197,26 +197,7 @@ T_RET _async_int_##FUNC()
 
 #define _impl_ASYNC(T_RET, FUNC, ARGS...) _ASYNC_DISPATH(ARGS)(T_RET, FUNC, ##ARGS)
 
-#define _TYPECAST(T, R, E) ((union {T x; R y;}) {.y = (E)}).x
-
-#define _TYPECAST_BACK(T, R, E) ((union {T x; R y;}) {.x = (E)}).y
-
-#define _AWAIT_NOTIMEOUT(T, EXPR) _TYPECAST(T, void *, async_await(EXPR, NULL, NULL))
-
-/**
- * Checks if TIMEOUT is a pointer, then dispatches correct async_await.
- * Casts TIMEOUT to correct type for the given dispatch 
- */
-#define _AWAIT_TIMEOUT(T, EXPR, TIMEOUT, DEFAULT)\
-    _TYPECAST(T, void *, _Generic((TIMEOUT), struct timespec *: async_await, default: async_await_double)(EXPR, TIMEOUT, _TYPECAST_BACK(T, void *, DEFAULT)))
-
-#define GET_4TH_ARG(A0, A1, A2, A3, ...) A3
-
-#define _AWAIT_DISPATCH(EXPR, TIMEOUT_DEFAULT...)\
-    GET_4TH_ARG(EXPR, ##TIMEOUT_DEFAULT, _AWAIT_TIMEOUT, INVALID_ARG_COUNT, _AWAIT_NOTIMEOUT)
-
-#define _impl_AWAIT(T, EXPR, TIMEOUT_DEFAULT...)\
-    _AWAIT_DISPATCH(EXPR, ##TIMEOUT_DEFAULT)(T, EXPR, ##TIMEOUT_DEFAULT)
+#define _impl_AWAIT(T, EXPR...) ((union {T x; void *y;}) {.y = async_await(EXPR)}).x
 
 #define _impl_YIELD tpool_yield
 
@@ -229,38 +210,6 @@ T_RET _async_int_##FUNC()
 #define _impl_YIELD_WHILE(EXPR...) do {\
     while (EXPR) {\
         _impl_YIELD();\
-    }\
-} while (0)
-
-#define _ASYNC_PREFIX(TOKEN) _async_int_##TOKEN
-
-#define _impl_ASYNC_SLEEP(TIME) do {\
-    struct timespec _ASYNC_PREFIX(start);\
-    clock_gettime(CLOCK_MONOTONIC, &_ASYNC_PREFIX(start));\
-    struct timespec _ASYNC_PREFIX(end);\
-    if (_Generic((TIME), double: 0, int: 0, struct timespec *: 1)) {\
-        struct timespec *_ASYNC_PREFIX(time) = _Generic((TIME), struct timespec *: (TIME), default: NULL);\
-        _ASYNC_PREFIX(end).tv_sec = _ASYNC_PREFIX(start).tv_sec + _ASYNC_PREFIX(time)->tv_sec;\
-        _ASYNC_PREFIX(end).tv_nsec = _ASYNC_PREFIX(start).tv_nsec + _ASYNC_PREFIX(time)->tv_nsec;\
-    } else {\
-        double _ASYNC_PREFIX(time) = _Generic((TIME), struct timespec *: 0.0, default: (TIME));\
-        assert(_ASYNC_PREFIX(time) >= 0.0);\
-        _ASYNC_PREFIX(end).tv_sec = _ASYNC_PREFIX(start).tv_sec + (time_t) _ASYNC_PREFIX(time);\
-        _ASYNC_PREFIX(end).tv_nsec = _ASYNC_PREFIX(start).tv_nsec + (long) (_ASYNC_PREFIX(time) - (time_t) _ASYNC_PREFIX(time)) * 1e9;\
-    }\
-    if (_ASYNC_PREFIX(end).tv_nsec >= 1000000000) {\
-        _ASYNC_PREFIX(end).tv_sec++;\
-        _ASYNC_PREFIX(end).tv_nsec -= 1000000000;\
-    }\
-    while (true) {\
-        _impl_YIELD();\
-        struct timespec _ASYNC_PREFIX(now);\
-        clock_gettime(CLOCK_MONOTONIC, &_ASYNC_PREFIX(now));\
-        if (_ASYNC_PREFIX(now).tv_sec > _ASYNC_PREFIX(end).tv_sec\
-            || (_ASYNC_PREFIX(now).tv_sec == _ASYNC_PREFIX(end).tv_sec && _ASYNC_PREFIX(now).tv_nsec >= _ASYNC_PREFIX(end).tv_nsec)\
-        ) {\
-            break;\
-        }\
     }\
 } while (0)
 

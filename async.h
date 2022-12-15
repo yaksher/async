@@ -2,6 +2,8 @@
 #define _TP_ASYNC_H
 
 #include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
 #include <assert.h>
 
 #include "threadpool.h"
@@ -30,27 +32,15 @@ typedef void *(*async_work)(void *arg);
  * @brief The await macro is used to wait for the result of an asynchronous task
  * created by a function defined with the `async` macro.
  * 
- * Usage is `await(return_type, handle, [timeout, default])`.
- * 
- * Omitting the timeout argument or setting it to 0 will wait indefinitely,
- * otherwise should be a `timespec` or a `double` representing seconds.
- * 
- * If timeout is specified, the default value must also be specified.
- * 
- * Guarantees that it waits at least as long as the timeout, but can be more.
+ * Usage is `await(return_type, handle)`.
  * 
  * For handles created directly by `async_run` rather than `async` functions,
  * behavior is undefined if `return_type` is not `void *`.
  * 
  * Evaluates to the result of the asynchronous task, yielding execution until
  * the task is complete.
- * 
- * If timeout is specified, returns a wrapper struct with a `bool success` indicating
- * whether the task completed before the timeout and a `return_type val` field.
- * 
- * If timeout is not specified, returns the result of the task.
  */
-#define await(T, HANDLE, TIMEOUT_DEFAULT...) _impl_AWAIT(T, HANDLE, ##TIMEOUT_DEFAULT)
+#define await(T, HANDLE...) _impl_AWAIT(T, HANDLE)
 
 
 /**
@@ -70,22 +60,8 @@ typedef void *(*async_work)(void *arg);
  * evaluated multiple times.
  */
 #define yield() _impl_YIELD()
-#define yield_until(COND) _impl_YIELD_UNTIL(COND)
-#define yield_while(COND) _impl_YIELD_WHILE(COND)
-
-/**
- * @brief Sleeps for the specified time. While sleeping, yields execution to
- * other tasks. The sleep will never be shorter than the specified time, but may
- * exceed it.
- * 
- * Usage is `async_sleep(time)`.
- * 
- * Time can be either a double representing seconds or a timespec.
- * 
- * Should only be used inside of asynchronous functions and will result in
- * unspecified behavior if used outside of an asynchronous function.
- */
-#define async_sleep(TIME) _impl_ASYNC_SLEEP(TIME)
+#define yield_until(COND...) _impl_YIELD_UNTIL(COND)
+#define yield_while(COND...) _impl_YIELD_WHILE(COND)
 
 /**
  * @brief Initializes the async library. Calls made before the next call to
@@ -111,17 +87,9 @@ async_handle *async_run(async_work work, void *arg);
  * The await macro is preferred for functions defined with the async macro.
  * 
  * @param handle The handle to the asynchronous task.
- * @param timeout The timeout to wait for the task to complete.
- * @param timeout_val The value to return if the timeout is reached.
- * @return void* The result of the asynchronous task or default if timeout
+ * @return void* The result of the asynchronous task.
  */
-void *async_await(async_handle *handle, struct timespec *timeout, void *timeout_val);
-
-/**
- * @brief Wrapper for async_await which takes timeout as a double representing
- * seconds instead of as a timespec.
- */
-void *async_await_double(async_handle *handle, double timeout, void *timeout_val);
+void *async_await(async_handle *handle);
 
 /**
  * @brief Closes the global threadpool.
