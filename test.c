@@ -1,6 +1,6 @@
-#include "async.h"
+#include <stdio.h>
 
-#include "stdio.h"
+#include "async.h"
 
 async(intptr_t, prod, intptr_t, n1, intptr_t, n2) {
     return n1 * n2;
