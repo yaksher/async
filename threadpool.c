@@ -130,6 +130,8 @@ static void task_wrapper() {
  * Notably, it is possible that this function will not return at all and the
  * thread will continue execution inside work_launcher.
  * 
+ * If it does return, it consumes task.
+ * 
  * @param task 
  * @return void* 
  */
@@ -170,20 +172,21 @@ static bool launch_task(tpool_pool *pool) {
         return true;
     }
 
-    task->handle->result = run_task(task); // May not return.
+    tpool_handle *handle = task->handle;
+    handle->result = run_task(task); // May not return.
 
-    pthread_mutex_lock(&task->handle->mutex);
-    task->handle->status = FINISHED;
-    pthread_cond_broadcast(&task->handle->result_cond);
-    pthread_mutex_unlock(&task->handle->mutex);
-    DEBUG("Signaled handle %p\n", task->handle);
+    pthread_mutex_lock(&handle->mutex);
+    handle->status = FINISHED;
+    pthread_cond_broadcast(&handle->result_cond);
+    pthread_mutex_unlock(&handle->mutex);
+    DEBUG("Signaled handle %p\n", handle);
     pthread_mutex_lock(&pool->task_count_mutex);
     pool->task_count--;
     if (pool->task_count == 0) {
         pthread_cond_broadcast(&pool->task_count_cond);
     }
     pthread_mutex_unlock(&pool->task_count_mutex);
-    DEBUG("Finished task %p\n", task->handle);
+    DEBUG("Finished task %p\n", handle);
     return false;
 }
 
@@ -309,7 +312,8 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg) {
     task->type = INITIAL;
     task->work = work;
     task->arg = arg;
-    task->handle = task_handle_init(pool);
+    tpool_handle *handle = task_handle_init(pool);
+    task->handle = handle;
     
     tpool_enqueue(pool->task_queue, task);
     
@@ -317,5 +321,5 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg) {
     pool->task_count++;
     pthread_mutex_unlock(&pool->task_count_mutex);
 
-    return task->handle;
+    return handle;
 }
