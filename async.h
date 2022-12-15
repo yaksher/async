@@ -70,8 +70,22 @@ typedef void *(*async_work)(void *arg);
  * evaluated multiple times.
  */
 #define yield() _impl_YIELD()
-#define yield_until(COND...) _impl_YIELD_UNTIL(COND)
-#define yield_while(COND...) _impl_YIELD_WHILE(COND)
+#define yield_until(COND) _impl_YIELD_UNTIL(COND)
+#define yield_while(COND) _impl_YIELD_WHILE(COND)
+
+/**
+ * @brief Sleeps for the specified time. While sleeping, yields execution to
+ * other tasks. The sleep will never be shorter than the specified time, but may
+ * exceed it.
+ * 
+ * Usage is `async_sleep(time)`.
+ * 
+ * Time can be either a double representing seconds or a timespec.
+ * 
+ * Should only be used inside of asynchronous functions and will result in
+ * unspecified behavior if used outside of an asynchronous function.
+ */
+#define async_sleep(TIME) _impl_ASYNC_SLEEP(TIME)
 
 /**
  * @brief Initializes the async library. Calls made before the next call to

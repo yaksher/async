@@ -201,10 +201,12 @@ T_RET _async_int_##FUNC()
 
 #define _AWAIT_NOTIMEOUT(T, EXPR) _TYPECAST_CALL(T, void *, async_await, EXPR, NULL, NULL)
 
+/**
+ * Checks if TIMEOUT is a pointer, then dispatches correct async_await.
+ * Casts TIMEOUT to correct type for the given dispatch 
+ */
 #define _AWAIT_TIMEOUT(T, EXPR, TIMEOUT, DEFAULT)\
-    (((uintptr_t) (TIMEOUT) == (TIMEOUT))\
-    ? _TYPECAST_CALL(T, void *, async_await, EXPR, TIMEOUT, DEFAULT)\
-    : _TYPECAST_CALL(T, void *, async_await_double, EXPR, TIMEOUT, DEFAULT))
+    _TYPECAST_CALL(T, void *, _Generic((EXPR), double: async_await_double, struct timespec *: async_await), EXPR, TIMEOUT, DEFAULT)
 
 #define GET_4TH_ARG(A0, A1, A2, A3, ...) A3
 
@@ -225,6 +227,33 @@ T_RET _async_int_##FUNC()
 #define _impl_YIELD_WHILE(EXPR...) do {\
     while (EXPR) {\
         _impl_YIELD();\
+    }\
+} while (0)
+
+#define _impl_ASYNC_SLEEP(TIME) do {\
+    struct timespec start;\
+    clock_gettime(CLOCK_MONOTONIC, &start);\
+    struct timespec end;\
+    if (_Generic((TIME), double: 0, struct timespec *: 1)) {\
+        end.tv_sec = start.tv_sec + (TIME)->tv_sec;\
+        end.tv_nsec = start.tv_nsec + (TIME)->tv_nsec;\
+    } else {\
+        end.tv_sec = start.tv_sec + (time_t) (TIME);\
+        end.tv_nsec = start.tv_nsec + (long) (TIME - end.tv_sec) * 1e9;\
+    }\
+    if (end.tv_nsec >= 1000000000) {\
+        end.tv_sec++;\
+        end.tv_nsec -= 1000000000;\
+    }\
+    while (true) {\
+        _impl_YIELD();\
+        struct timespec now;\
+        clock_gettime(CLOCK_MONOTONIC, &now);\
+        if (now.tv_sec > end.tv_sec\
+            || (now.tv_sec == end.tv_sec && now.tv_nsec >= end.tv_nsec)\
+        ) {\
+            break;\
+        }\
     }\
 } while (0)
 
