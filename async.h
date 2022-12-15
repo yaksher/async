@@ -9,6 +9,9 @@
 #include "threadpool.h"
 #include "async_macros.h"
 
+typedef tpool_handle async_handle;
+typedef void *(*async_work)(void *arg);
+
 /**
  * @brief The async macro is used to define an asynchronous function.
  * 
@@ -59,9 +62,6 @@
 #define yield() _impl_YIELD()
 #define yield_until(COND...) _impl_YIELD_UNTIL(COND)
 #define yield_while(COND...) _impl_YIELD_WHILE(COND)
-
-typedef tpool_handle async_handle;
-typedef void *(*async_work)(void *arg);
 
 /**
  * @brief Initializes the async library. Calls made before the next call to
