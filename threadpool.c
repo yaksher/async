@@ -1,3 +1,5 @@
+#define LOG_LEVEL 3
+
 #define _XOPEN_SOURCE
 #include <ucontext.h>
 
@@ -70,8 +72,6 @@ static tdata_t *get_tdata();
         exit(*(volatile int *) 0xFA);\
     } while (0)
 
-#define LOG_LEVEL 2
-
 #if (LOG_LEVEL >= 1)
 #define WARN LOG
 #else
@@ -131,6 +131,10 @@ static void task_wrapper() {
     void *out = tdata->curr_task->work(tdata->curr_task->arg);
     tdata = get_tdata();
     tdata->curr_task->arg = out;
+    if (tdata->curr_task->handle->status == ABORTING) {
+        free(tdata->curr_task->handle);
+        tdata->curr_task->handle = NULL;
+    }
     setcontext(&tdata->return_context);
 }
 
@@ -191,25 +195,30 @@ void modify_task_count(tpool_pool *pool, int32_t mod) {
 }
 
 static bool launch_task(tpool_pool *pool) {
+    DEBUG("Waiting on task queue\n");
     task_t *task = tpool_dequeue(pool->task_queue);
+    DEBUG("Got task\n");
 
     if (task == NULL) {
         return true;
     }
 
-    tpool_handle *handle = task->handle;
     void *result = run_task(task); // May not return.
-    if (handle && handle->status != ABORTING) {
+    DEBUG("Task returned with value %p\n", result);
+    if (task->handle) {
+        tpool_handle *handle = task->handle;
         handle->result = result;
 
+        DEBUG("Trying to lock handle %p\n", handle);
         pthread_mutex_lock(&handle->mutex);
+        DEBUG("Locked handle %p\n", handle);
         handle->status = FINISHED;
         pthread_cond_broadcast(&handle->result_cond);
         pthread_mutex_unlock(&handle->mutex);
         DEBUG("Signaled handle %p\n", handle);
     }
     modify_task_count(pool, -1);
-    DEBUG("Finished task %p\n", handle);
+    DEBUG("Finished task\n");
     return false;
 }
 
@@ -224,10 +233,10 @@ static void *pool_thread(void *arg) {
     free(arg);
 
     getcontext(&tdata->yield_context);
-    DEBUG("Passed yield context.\n");
     if (tdata->curr_task != NULL) {
         task_t *task = tdata->curr_task;
         if (task->type == ABORT) {
+            DEBUG("Aborting task %p\n", task->handle);
             free(task->stack);
             free(task);
             modify_task_count(pool, -1);
@@ -308,6 +317,7 @@ void tpool_yield() {
     if (task->handle && task->handle->status == ABORTING) {
         task->type = ABORT;
         DEBUG("Aborting task %p.\n", tdata->curr_task->handle);
+        free(task->handle);
         setcontext(&tdata->yield_context);
     } else {
         tdata->curr_task->type = RESUME;
@@ -319,7 +329,12 @@ void tpool_yield() {
 
 void abort_handle(tpool_handle *handle) {
     DEBUG("Aborting handle %p.\n", handle);
+    DEBUG("Locking handle %p.\n", handle);
+    pthread_mutex_lock(&handle->mutex);
+    DEBUG("Locked handle %p.\n", handle);
     handle->status = ABORTING;
+    pthread_mutex_unlock(&handle->mutex);
+    DEBUG("Unlocked handle %p.\n", handle);
 }
 
 void *tpool_task_await(tpool_handle *handle, struct timespec *timeout, void *timeout_val) {
@@ -347,8 +362,8 @@ void *tpool_task_await(tpool_handle *handle, struct timespec *timeout, void *tim
                     || (now.tv_sec == end.tv_sec && now.tv_nsec >= end.tv_nsec)
                 ) {
                     abort_handle(handle);
-                    result = timeout_val;
-                    goto EXIT;
+                    pthread_mutex_unlock(&handle->mutex);
+                    return timeout_val;
                 }
             }
             pthread_mutex_unlock(&handle->mutex);
@@ -360,15 +375,15 @@ void *tpool_task_await(tpool_handle *handle, struct timespec *timeout, void *tim
                 struct timespec now;
                 clock_gettime(CLOCK_REALTIME, &now);
                 abort_handle(handle);
-                result = timeout_val;
-                goto EXIT;
+                pthread_mutex_unlock(&handle->mutex);
+                DEBUG("Timed out waiting on handle %p.\n", handle);
+                return timeout_val;
             }
         } else {
             pthread_cond_wait(&handle->result_cond, &handle->mutex);
         }
     }
     result = handle->result;
-    EXIT:
     pthread_mutex_unlock(&handle->mutex);
     DEBUG("Done waiting on handle %p.\n", handle);
     free(handle);

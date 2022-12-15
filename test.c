@@ -22,8 +22,8 @@ async(int *, malloc_int, int, n) {
     return ptr;
 }
 
-async(int, a_sleep, double, time) {
-    async_sleep(time);
+async(int, a_sleep, double, t) {
+    async_sleep(t);
     return 1;
 }
 
@@ -37,9 +37,9 @@ int main() {
     printf("%ld\n", await(intptr_t, prod(10, 20)));
     printf("%ld\n", await(intptr_t, fibonacci(20)));
     printf("%d\n", *await(int *, malloc_int(20)));
-    printf("%d\n", await(int, sleep_5(), 5.1, 0));
-    printf("%d\n", await(int, a_sleep(1), 1.1, 0));
-    printf("%d\n", await(int, a_sleep(2), 1, 0));
+    // printf("%d\n", await(int, sleep_5(), 0.1, 3));
+    // printf("%d\n", await(int, a_sleep(1), 0.1, 4));
+    // printf("%d\n", await(int, a_sleep(2), 0.1, 5));
     async_close();
     return 0;
 }
