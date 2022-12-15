@@ -16,8 +16,10 @@ async(intptr_t, fibonacci, intptr_t, n) {
     return await(intptr_t, h1) + await(intptr_t, h2);
 }
 
-async(void *, fake_malloc) {
-    return malloc(100);
+async(int *, malloc_int, int, n) {
+    int *ptr = malloc(sizeof(int));
+    *ptr = n;
+    return ptr;
 }
 
 async(int, a_sleep, double, time) {
@@ -32,12 +34,12 @@ async(int, sleep_5) {
 
 int main() {
     async_init(1);
-    // printf("%ld\n", await(intptr_t, prod(10, 20)));
-    // printf("%ld\n", await(intptr_t, fibonacci(20)));
-    // printf("%p\n", await(void *, fake_malloc()));
-    printf("%d\n", await(int, sleep_5(), 5.5, 0));
+    printf("%ld\n", await(intptr_t, prod(10, 20)));
+    printf("%ld\n", await(intptr_t, fibonacci(20)));
+    printf("%d\n", *await(int *, malloc_int(20)));
+    printf("%d\n", await(int, sleep_5(), 5.1, 0));
     printf("%d\n", await(int, a_sleep(1), 1.1, 0));
-    printf("%d\n", await(int, a_sleep(2), 1.1, 0));
+    printf("%d\n", await(int, a_sleep(2), 1, 0));
     async_close();
     return 0;
 }
