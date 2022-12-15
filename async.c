@@ -30,7 +30,7 @@ void *async_await_double(async_handle *handle, double timeout, void *timeout_val
 void async_close() {
     pthread_mutex_lock(&pool_mutex);
     if (pool != NULL) {
-        tpool_close(pool, false);
+        tpool_close(pool);
         pool = NULL;
     }
     pthread_mutex_unlock(&pool_mutex);
