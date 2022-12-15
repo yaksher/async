@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <unistd.h>
 
 #include "async.h"
 
@@ -19,24 +20,24 @@ async(void *, fake_malloc) {
     return malloc(100);
 }
 
-async(int, sleep_1) {
-    async_sleep(1.0);
+async(int, a_sleep, double, time) {
+    async_sleep(time);
     return 1;
 }
 
-async(int, sleep_2) {
-    struct timespec ts = { .tv_sec = 2, .tv_nsec = 0 };
-    async_sleep(&ts);
+async(int, sleep_5) {
+    sleep(5);
     return 1;
 }
 
 int main() {
-    async_init(0);
-    printf("%ld\n", await(intptr_t, prod(10, 20)));
-    printf("%ld\n", await(intptr_t, fibonacci(20)));
-    printf("%p\n", await(void *, fake_malloc()));
-    printf("%d\n", await(int, sleep_1(), 1.1, 0));
-    printf("%d\n", await(int, sleep_2(), 2.1, 0));
+    async_init(1);
+    // printf("%ld\n", await(intptr_t, prod(10, 20)));
+    // printf("%ld\n", await(intptr_t, fibonacci(20)));
+    // printf("%p\n", await(void *, fake_malloc()));
+    printf("%d\n", await(int, sleep_5(), 5.5, 0));
+    printf("%d\n", await(int, a_sleep(1), 1.1, 0));
+    printf("%d\n", await(int, a_sleep(2), 1.1, 0));
     async_close();
     return 0;
 }
