@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "threadpool.h"
+#include "wrappings.h"
 #include "queue.h"
 
 struct tpool_handle {
@@ -72,7 +73,7 @@ static tdata_t *get_tdata();
         exit(*(volatile int *) 0xFA);\
     } while (0)
 
-#define LOG_LEVEL 3
+#define LOG_LEVEL 2
 
 #if (LOG_LEVEL >= 1)
 #define WARN LOG
@@ -278,6 +279,8 @@ tpool_pool *tpool_init(size_t size) {
     };
 
     sigaction(SIGUSR1, &handler, NULL);
+
+    init_mem_wrapper(tpool_atomic_start, tpool_atomic_end);
 
     tpool_pool *pool = malloc(sizeof(tpool_pool) + sizeof(pthread_t) * size);
 
