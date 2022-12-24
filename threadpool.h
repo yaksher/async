@@ -33,6 +33,21 @@ void tpool_close(tpool_pool *pool);
 void tpool_yield();
 
 /**
+ * @brief Puts a task into atomic mode, where it cannot be interrupted.
+ * 
+ * Required for any functions that are not signal safe, except malloc and 
+ * functions which are not signal safe because of internal malloc calls.
+ * 
+ */
+void tpool_atomic_start();
+
+/**
+ * @brief Exits atomic mode.
+ * 
+ */
+void tpool_atomic_end();
+
+/**
  * Gets the result of a future.
  */
 void *tpool_task_await(tpool_handle *handle);

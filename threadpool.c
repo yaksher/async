@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <string.h>
 
 #include "threadpool.h"
 #include "queue.h"
@@ -44,6 +45,9 @@ typedef struct thread_data {
     size_t id;
     task_t *curr_task;
     pthread_t self;
+    bool atomic;
+    bool privileged;
+    bool yield_requested;
 } tdata_t;
 
 #define TPOOL_DEFAULT_SIZE 16
@@ -68,7 +72,7 @@ static tdata_t *get_tdata();
         exit(*(volatile int *) 0xFA);\
     } while (0)
 
-#define LOG_LEVEL 2
+#define LOG_LEVEL 3
 
 #if (LOG_LEVEL >= 1)
 #define WARN LOG
@@ -118,6 +122,24 @@ static tdata_t *get_tdata() {
 #define PAGE_SIZE 4096
 #define TASK_STACK_SIZE PAGE_SIZE * 16
 
+void tpool_atomic_start() {
+    tdata_t *tdata = get_tdata();
+    if (tdata) {
+        tdata->atomic = true;
+    }
+}
+
+void tpool_atomic_end() {
+    tdata_t *tdata = get_tdata();
+    if (tdata) {
+        tdata->atomic = false;
+        if (tdata->yield_requested) {
+            tdata->yield_requested = false;
+            tpool_yield();
+        }
+    }
+}
+
 static void task_wrapper() {
     tdata_t *tdata = get_tdata();
     void *out = tdata->curr_task->work(tdata->curr_task->arg);
@@ -158,9 +180,11 @@ static void *run_task(task_t *task) {
     } else {
         ERROR("Invalid task type.\n");
     }
+    tdata->privileged = false;
     swapcontext(&tdata->return_context, &task->context);
 
     tdata = get_tdata();
+    tdata->privileged = true;
 
     DEBUG("Returning from task %p with value %p\n", task->handle, tdata->curr_task->arg);
     void *out = tdata->curr_task->arg;
@@ -168,6 +192,13 @@ static void *run_task(task_t *task) {
     free(tdata->curr_task);
     tdata->curr_task = NULL;
     return out;
+}
+
+static void modify_task_count(tpool_pool *pool, int delta) {
+    pthread_mutex_lock(&pool->task_count_mutex);
+    pool->task_count += delta;
+    pthread_cond_broadcast(&pool->task_count_cond);
+    pthread_mutex_unlock(&pool->task_count_mutex);
 }
 
 static bool launch_task(tpool_pool *pool) {
@@ -185,21 +216,21 @@ static bool launch_task(tpool_pool *pool) {
     pthread_cond_broadcast(&handle->result_cond);
     pthread_mutex_unlock(&handle->mutex);
     DEBUG("Signaled handle %p\n", handle);
-    pthread_mutex_lock(&pool->task_count_mutex);
-    pool->task_count--;
-    if (pool->task_count == 0) {
-        pthread_cond_broadcast(&pool->task_count_cond);
-    }
-    pthread_mutex_unlock(&pool->task_count_mutex);
+    modify_task_count(pool, -1);
     DEBUG("Finished task %p\n", handle);
     return false;
 }
 
 static void *pool_thread(void *arg) {
-    tdata.init = true;
-    tdata.self = pthread_self();
-    tdata.id = *(size_t *) (arg + sizeof(tpool_pool *));
-    tdata.curr_task = NULL;
+    tdata = (tdata_t) {
+        .init = true,
+        .self = pthread_self(),
+        .id = *(size_t *) (arg + sizeof(tpool_pool *)),
+        .curr_task = NULL,
+        .atomic = false,
+        .privileged = true,
+        .yield_requested = false
+    };
     // pthread_setspecific(thread_local_key, tdata);
 
     tpool_pool *pool = *(tpool_pool **) arg;
@@ -219,10 +250,34 @@ static void *pool_thread(void *arg) {
     }
 }
 
+void interrupt_handler(int sig, siginfo_t *info, void *context) {
+    (void) sig;
+    (void) info;
+    tdata_t *tdata = get_tdata();
+    if (tdata == NULL || tdata->privileged) {
+        return;
+    }
+    if (tdata->atomic) {
+        tdata->yield_requested = true;
+        return;
+    }
+    tdata->curr_task->type = RESUME;
+    memcpy(&tdata->curr_task->context, context, sizeof(ucontext_t));
+    memcpy(context, &tdata->yield_context, sizeof(ucontext_t));
+}
+
 tpool_pool *tpool_init(size_t size) {
     if (size == 0) {
         size = TPOOL_DEFAULT_SIZE;
     }
+
+    struct sigaction handler = {
+        .sa_sigaction = interrupt_handler,
+        .sa_flags = SA_SIGINFO,
+        .sa_mask = 0
+    };
+
+    sigaction(SIGUSR1, &handler, NULL);
 
     tpool_pool *pool = malloc(sizeof(tpool_pool) + sizeof(pthread_t) * size);
 
@@ -290,11 +345,14 @@ void tpool_yield() {
 
 void *tpool_task_await(tpool_handle *handle) {
     DEBUG("Awaiting handle %p.\n", handle);
+    // tpool_atomic_start();
     pthread_mutex_lock(&handle->mutex);
     if (get_tdata()) {
         while (handle->status == WAITING) {
             pthread_mutex_unlock(&handle->mutex);
+            tpool_atomic_end();
             tpool_yield(); // Potentially returns in different thread.
+            tpool_atomic_start();
             pthread_mutex_lock(&handle->mutex);
         }
     } else {
@@ -304,6 +362,7 @@ void *tpool_task_await(tpool_handle *handle) {
     }
     void *result = handle->result;
     pthread_mutex_unlock(&handle->mutex);
+    tpool_atomic_end();
     DEBUG("Done waiting on handle %p.\n", handle);
     free(handle);
 
@@ -330,9 +389,7 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg) {
     
     tpool_enqueue(pool->task_queue, task);
     
-    pthread_mutex_lock(&pool->task_count_mutex);
-    pool->task_count++;
-    pthread_mutex_unlock(&pool->task_count_mutex);
+    modify_task_count(pool, 1);
 
     return handle;
 }
