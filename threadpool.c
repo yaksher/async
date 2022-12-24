@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <signal.h>
+#include <string.h>
 
 #include "threadpool.h"
 #include "queue.h"
@@ -131,6 +133,10 @@ void tpool_atomic_end() {
     tdata_t *tdata = get_tdata();
     if (tdata) {
         tdata->atomic = false;
+        if (tdata->yield_requested) {
+            tdata->yield_requested = false;
+            tpool_yield();
+        }
     }
 }
 
@@ -244,10 +250,34 @@ static void *pool_thread(void *arg) {
     }
 }
 
+void interrupt_handler(int sig, siginfo_t *info, void *context) {
+    (void) sig;
+    (void) info;
+    tdata_t *tdata = get_tdata();
+    if (tdata == NULL || tdata->privileged) {
+        return;
+    }
+    if (tdata->atomic) {
+        tdata->yield_requested = true;
+        return;
+    }
+    tdata->curr_task->type = RESUME;
+    memcpy(&tdata->curr_task->context, context, sizeof(ucontext_t));
+    memcpy(context, &tdata->yield_context, sizeof(ucontext_t));
+}
+
 tpool_pool *tpool_init(size_t size) {
     if (size == 0) {
         size = TPOOL_DEFAULT_SIZE;
     }
+
+    struct sigaction handler = {
+        .sa_sigaction = interrupt_handler,
+        .sa_flags = SA_SIGINFO,
+        .sa_mask = 0
+    };
+
+    sigaction(SIGUSR1, &handler, NULL);
 
     tpool_pool *pool = malloc(sizeof(tpool_pool) + sizeof(pthread_t) * size);
 
