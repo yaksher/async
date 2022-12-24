@@ -38,5 +38,13 @@ bin/wrap_malloc.so: wrappings.c
 out/%.o: %.c
 	$(CC) $(CFLAGS) -c $^ -o $@
 
+threadpool.c: wrappings.h threadpool.h
+
+async.c: async.h
+
+test.c: async.h
+
+queue.c: queue.h
+
 clean:
 	$(CLEAN_COMMAND)
