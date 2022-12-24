@@ -280,7 +280,7 @@ tpool_pool *tpool_init(size_t size) {
 
     sigaction(SIGUSR1, &handler, NULL);
 
-    init_mem_wrapper(tpool_atomic_start, tpool_atomic_end);
+    set_mem_wrapper(tpool_atomic_start, tpool_atomic_end);
 
     tpool_pool *pool = malloc(sizeof(tpool_pool) + sizeof(pthread_t) * size);
 
