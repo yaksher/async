@@ -8,7 +8,6 @@ void (*pre_mem_func)() = NULL;
 void (*post_mem_func)() = NULL;
 
 void init_mem_wrapper(void (*pre)(), void (*post)()) {
-    puts("Real init");
     pre_mem_func = pre;
     post_mem_func = post;
 }

@@ -15,10 +15,6 @@ void init_mem_wrapper(void (*pre)(), void (*post)()) {
         }
     }
     init(pre, post);
-    // (void) pre;
-    // (void) post;
-    // puts("Default init.");
-    // return;
 }
 
 #endif

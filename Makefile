@@ -33,7 +33,7 @@ bin/test: out/test.o out/async.o out/threadpool.o out/queue.o
 	$(CC) $(CFLAGS) $(LFLAGS) $^ -o $@
 
 bin/wrap_malloc.so: wrappings.c
-	$(CC) -fPIE -shared -lc wrappings.c -o bin/wrap_malloc.so
+	$(CC) -fpic -shared wrappings.c -o bin/wrap_malloc.so
 
 out/%.o: %.c
 	$(CC) $(CFLAGS) -c $^ -o $@
