@@ -3,7 +3,7 @@ CLEAN_COMMAND = rm -rf threadpool threadpool.o bin/* out/*
 
 CFLAGS_BASE = -Wall -Wextra -Wno-deprecated-declarations -pthread
 RELEASE_FLAGS = -O3
-DEBUG_FLAGS = -O0 -g -fsanitize=thread,undefined
+DEBUG_FLAGS = -O0 -g -fsanitize=thread
 
 ifeq ($(shell uname -s),Darwin)
   PRELOAD = DYLD_INSERT_LIBRARIES
