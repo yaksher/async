@@ -24,7 +24,7 @@ typedef struct {
     void *arg;
     tpool_work work;
     tpool_handle *handle;
-    uint8_t *stack;
+    void *stack;
     ucontext_t context;
 } task_t;
 
