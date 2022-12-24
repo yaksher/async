@@ -64,6 +64,44 @@ typedef void *(*async_work)(void *arg);
 #define yield_while(COND...) _impl_YIELD_WHILE(COND)
 
 /**
+ * @brief Atomic macros are used to create atomic sections in tasks.
+ * 
+ * Atomic sections are guaranteed to be executed without interruption, which
+ * means that they do not need to be signal safe.
+ * 
+ * All code not inside an atomic block must be signal safe.
+ * 
+ * Usage is
+ * 
+ * `atomic {
+ *   // atomic code
+ * }`
+ * 
+ * or
+ * 
+ * `atomic_start();
+ * 
+ * // atomic code
+ * 
+ * atomic_end();`
+ * 
+ * If using the `atomic {}` block, note that using `goto`,
+ * `break`, or `continue` to move from inside the block outisde it, 
+ * or calling a function which does not return, will result in 
+ * unspecified behavior.
+ * 
+ * Atomic sections may be nested (though this is equivalent to just the outer
+ * atomic section)
+ * 
+ * Calling atomic_end() more times than atomic_start() will result in unspecified
+ * behavior.
+ * 
+ */
+#define atomic _impl_ATOMIC
+#define atomic_start _impl_ATOMIC_BEGIN
+#define atomic_end _impl_ATOMIC_END
+
+/**
  * @brief Initializes the async library. Calls made before the next call to
  * async_close will do nothing. Calls made while async_close is running will
  * block until async_close returns, then run.
