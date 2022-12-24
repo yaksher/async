@@ -46,7 +46,7 @@ typedef struct thread_data {
     size_t id;
     task_t *curr_task;
     pthread_t self;
-    bool atomic;
+    size_t atomic_depth;
     bool privileged;
     bool yield_requested;
 } tdata_t;
@@ -126,14 +126,14 @@ static tdata_t *get_tdata() {
 void tpool_atomic_start() {
     tdata_t *tdata = get_tdata();
     if (tdata) {
-        tdata->atomic = true;
+        tdata->atomic_depth += 1;
     }
 }
 
 void tpool_atomic_end() {
     tdata_t *tdata = get_tdata();
     if (tdata) {
-        tdata->atomic = false;
+        tdata->atomic_depth -= 1;
         if (tdata->yield_requested) {
             tdata->yield_requested = false;
             tpool_yield();
@@ -228,7 +228,7 @@ static void *pool_thread(void *arg) {
         .self = pthread_self(),
         .id = *(size_t *) (arg + sizeof(tpool_pool *)),
         .curr_task = NULL,
-        .atomic = false,
+        .atomic_depth = 0,
         .privileged = true,
         .yield_requested = false
     };
@@ -258,7 +258,7 @@ void interrupt_handler(int sig, siginfo_t *info, void *context) {
     if (tdata == NULL || tdata->privileged) {
         return;
     }
-    if (tdata->atomic) {
+    if (tdata->atomic_depth > 0) {
         tdata->yield_requested = true;
         return;
     }
