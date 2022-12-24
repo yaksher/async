@@ -289,16 +289,24 @@ tpool_pool *tpool_init(size_t size) {
     pool->task_queue = tpool_queue_init();
 
     // spawn the thread pool
-    for (size_t i = 0; i < size; i++) {
+    size_t i;
+    for (i = 0; i < size; i++) {
         void *thread_start_arg = malloc(sizeof(tpool_pool *) + sizeof(size_t));
         *(tpool_pool **) thread_start_arg = pool;
         *(size_t *) (thread_start_arg + sizeof(tpool_pool *)) = i;
         int ret = pthread_create(&pool->threads[i], NULL, pool_thread, thread_start_arg);
         if (ret) {
-            return NULL;
+            goto FAIL;
         }
     }
     return pool;
+    FAIL:
+    tpool_queue_free(pool->task_queue);
+    for (size_t j = 0; j < i; j++) {
+        pthread_kill(pool->threads[j], SIGKILL);
+    }
+    free(pool);
+    return NULL;
 }
 
 void tpool_close(tpool_pool *pool) {
