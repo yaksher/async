@@ -104,8 +104,6 @@ typedef void *(*async_work)(void *arg);
  * 
  * The `yield` macros above, as well as `await` will still yield control of the
  * thread to other tasks. The `atomic` mode only prevents signal interrupts.
- * 
- * `atomic_start` will always return `false` and `atomic_end` will always return `true`.
  */
 #define atomic _impl_ATOMIC
 #define atomic_start _impl_ATOMIC_START
@@ -140,20 +138,6 @@ async_handle *async_run(async_work work, void *arg);
  * @return void* The result of the asynchronous task.
  */
 void *async_await(async_handle *handle);
-
-/**
- * @brief Starts an atomic section. Identical to `atomic_start()` above.
- * 
- * @return bool `false`
- */
-bool async_atomic_start();
-
-/**
- * @brief Ends an atomic section. Identical to `atomic_end()` above.
- * 
- * @return bool `true`
- */
-bool async_atomic_end();
 
 /**
  * @brief Closes the global threadpool.

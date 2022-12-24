@@ -19,16 +19,6 @@ void *async_await(async_handle *handle) {
     return tpool_task_await((tpool_handle *) handle);
 }
 
-bool async_atomic_start() {
-    tpool_atomic_start();
-    return false;
-}
-
-bool async_atomic_end() {
-    tpool_atomic_end();
-    return true;
-}
-
 void async_close() {
     pthread_mutex_lock(&pool_mutex);
     if (pool != NULL) {
