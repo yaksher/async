@@ -2,12 +2,17 @@
 #define WRAPPINGS_H
 
 #include <dlfcn.h>
+#include <stdio.h>
 
 void init_mem_wrapper(void (*pre)(), void (*post)()) {
-    void *handle = dlopen("wrap_malloc.so", RTLD_LAZY);
     static void (*init)(void (*pre)(), void (*post)()) = NULL;
     if (!init) {
-        init = dlsym(handle, "init_mem_wrapper");
+        init = dlsym(RTLD_DEFAULT, "init_mem_wrapper");
+        char *error = dlerror();
+        if (error != NULL) {
+            puts(error);
+            exit(1);
+        }
     }
     init(pre, post);
     // (void) pre;
