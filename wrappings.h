@@ -1,6 +1,7 @@
 #ifndef WRAPPINGS_H
 #define WRAPPINGS_H
 
+#define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stdio.h>
 
@@ -17,4 +18,5 @@ void set_mem_wrapper(void (*pre)(), void (*post)()) {
     set(pre, post);
 }
 
+#undef _GNU_SOURCE
 #endif
