@@ -213,4 +213,14 @@ T_RET _async_int_##FUNC()
     }\
 } while (0)
 
+#define _impl_ATOMIC_START async_atomic_start
+#define _impl_ATOMIC_END async_atomic_end
+#define _impl_ATOMIC for (\
+    bool _async_int_ATOMIC = _impl_ATOMIC_START();\
+    !_async_int_ATOMIC;\
+    _async_int_ATOMIC = _impl_ATOMIC_END()\
+    )
+#define _impl_ATOMIC_BREAK continue
+#define _impl_ATOMIC_RETURN _impl_ATOMIC_END(); return
+
 #endif

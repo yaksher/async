@@ -87,19 +87,31 @@ typedef void *(*async_work)(void *arg);
  * 
  * If using the `atomic {}` block, note that using `goto`,
  * `break`, or `continue` to move from inside the block outisde it, 
- * or calling a function which does not return, will result in 
- * unspecified behavior.
+ * as well as returning or calling a function which does not return,
+ * will result in unspecified behavior.
  * 
  * Atomic sections may be nested (though this is equivalent to just the outer
  * atomic section)
  * 
- * Calling atomic_end() more times than atomic_start() will result in unspecified
+ * Calling `atomic_end()` more times than `atomic_start()` will result in unspecified
  * behavior.
  * 
+ * The `atomic_break` and `atomic_return` macros will jump to the end of the atomic block
+ * and safely return from the function, respectively.
+ * 
+ * Note that `atomic_return` is only valid when inside *exactly* one atomic block in
+ * the current function.
+ * 
+ * The `yield` macros above, as well as `await` will still yield control of the
+ * thread to other tasks. The `atomic` mode only prevents signal interrupts.
+ * 
+ * `atomic_start` will always return `false` and `atomic_end` will always return `true`.
  */
 #define atomic _impl_ATOMIC
-#define atomic_start _impl_ATOMIC_BEGIN
+#define atomic_start _impl_ATOMIC_START
 #define atomic_end _impl_ATOMIC_END
+#define atomic_break _impl_ATOMIC_BREAK
+#define atomic_return _impl_ATOMIC_RETURN
 
 /**
  * @brief Initializes the async library. Calls made before the next call to
@@ -128,6 +140,20 @@ async_handle *async_run(async_work work, void *arg);
  * @return void* The result of the asynchronous task.
  */
 void *async_await(async_handle *handle);
+
+/**
+ * @brief Starts an atomic section. Identical to `atomic_start()` above.
+ * 
+ * @return bool `false`
+ */
+bool async_atomic_start();
+
+/**
+ * @brief Ends an atomic section. Identical to `atomic_end()` above.
+ * 
+ * @return bool `true`
+ */
+bool async_atomic_end();
 
 /**
  * @brief Closes the global threadpool.
