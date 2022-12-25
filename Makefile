@@ -8,6 +8,7 @@ DEBUG_FLAGS = -O0 -g -fsanitize=thread,undefined
 ifeq ($(shell uname -s),Darwin)
   PRELOAD = DYLD_INSERT_LIBRARIES
 else
+  LFLAGS += -ldl
   PRELOAD = LD_PRELOAD
 endif
 
@@ -33,7 +34,7 @@ bin/test: out/test.o out/async.o out/threadpool.o out/queue.o
 	$(CC) $(CFLAGS) $(LFLAGS) $^ -o $@
 
 bin/wrap_malloc.so: wrappings.c
-	$(CC) -fpic -shared wrappings.c -o bin/wrap_malloc.so
+	$(CC) -fpic -shared -lc wrappings.c -o bin/wrap_malloc.so
 
 out/%.o: %.c
 	$(CC) $(CFLAGS) -c $^ -o $@
