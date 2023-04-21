@@ -25,25 +25,25 @@ void tpool_close(tpool_pool *pool);
 /**
  * @brief Yields execution to the threadpool, enqueueing a resume task so that
  * the threadpool can resume execution of the current task eventually.
- * 
+ *
  * Assumes the calling thread is a threadpool thread.
- * 
+ *
  * May return in different thread than the caller, but returns exactly once.
  */
 void tpool_yield();
 
 /**
  * @brief Puts a task into atomic mode, where it cannot be interrupted.
- * 
- * Required for any functions that are not signal safe, except malloc and 
+ *
+ * Required for any functions that are not signal safe, except malloc and
  * functions which are not signal safe because of internal malloc calls.
- * 
+ *
  */
 void tpool_atomic_start();
 
 /**
  * @brief Exits atomic mode.
- * 
+ *
  */
 void tpool_atomic_end();
 
