@@ -135,7 +135,7 @@ void tpool_atomic_end() {
     tdata_t *tdata = get_tdata();
     if (tdata) {
         tdata->atomic_depth -= 1;
-        if (tdata->yield_requested) {
+        if (tdata->atomic_depth == 0 && tdata->yield_requested) {
             tdata->yield_requested = false;
             tpool_yield();
         }
@@ -155,14 +155,14 @@ static void task_wrapper() {
  * an asynchronous call, the task will be suspended and the thread will
  * return to the thread pool. If the task completes, the result will be
  * returned.
- * 
+ *
  * Notably, it is possible that this function will not return at all and the
  * thread will continue execution inside work_launcher.
- * 
+ *
  * If it does return, it consumes task.
- * 
- * @param task 
- * @return void* 
+ *
+ * @param task
+ * @return void*
  */
 static void *run_task(task_t *task) {
     tdata_t *tdata = get_tdata();
@@ -315,7 +315,7 @@ tpool_pool *tpool_init(size_t size) {
 
 void tpool_close(tpool_pool *pool) {
     size_t size = pool->pool_size;
-    
+
     // queue will return NULL instead of blocking when empty
     pthread_mutex_lock(&pool->task_count_mutex);
     while (pool->task_count > 0) {
@@ -334,9 +334,9 @@ void tpool_close(tpool_pool *pool) {
 /**
  * @brief Yields execution to the threadpool, enqueueing a resume task so that
  * the threadpool can resume execution of the current task eventually.
- * 
+ *
  * Assumes the calling thread is a threadpool thread.
- * 
+ *
  * May return in different thread than the caller, but returns exactly once.
  */
 void tpool_yield() {
@@ -390,9 +390,9 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg) {
     task->arg = arg;
     tpool_handle *handle = task_handle_init(pool);
     task->handle = handle;
-    
+
     tpool_enqueue(pool->task_queue, task);
-    
+
     modify_task_count(pool, 1);
 
     return handle;
