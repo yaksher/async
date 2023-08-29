@@ -16,11 +16,7 @@ async(intptr_t, fibonacci, intptr_t, n) {
 }
 
 async(void *, malloc_100) {
-    void *p;
-    atomic {
-        p = malloc(100);
-    }
-    return p;
+    return malloc(100);
 }
 
 int main() {

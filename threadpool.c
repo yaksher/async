@@ -343,7 +343,7 @@ void tpool_yield() {
     tdata_t *tdata = get_tdata();
     tdata->curr_task->type = RESUME;
     DEBUG("Yielding task %p.\n", tdata->curr_task->handle);
-    swapcontext(&tdata->curr_task->context, &tdata->yield_context); // doesn't return
+    swapcontext(&tdata->curr_task->context, &tdata->yield_context);
     DEBUG("Resuming %p.\n", get_tdata()->curr_task->handle);
 }
 

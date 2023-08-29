@@ -17,8 +17,6 @@ tpool_pool *tpool_init(size_t size);
  * Waits until all workers are waiting for tasks, then exits.
  * May never return if tasks add other tasks.
  * Behavior is unspecified if tasks are added while this is running.
- * If "get_results" is true, mallocs and returns an array with the contents of the results
- * queue
  */
 void tpool_close(tpool_pool *pool);
 
@@ -36,7 +34,8 @@ void tpool_yield();
  * @brief Puts a task into atomic mode, where it cannot be interrupted.
  *
  * Required for any functions that are not signal safe, except malloc and
- * functions which are not signal safe because of internal malloc calls.
+ * functions which are not signal safe because of internal malloc calls, when
+ * running in preemptible mode (preemptible mode does not yet exist)
  *
  */
 void tpool_atomic_start();

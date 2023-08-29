@@ -65,6 +65,9 @@ typedef void *(*async_work)(void *arg);
 
 /**
  * @brief Atomic macros are used to create atomic sections in tasks.
+ * 
+ * Note that preemption is not currently actually implemented, making these
+ * serve no actual purpose.
  *
  * Atomic sections are guaranteed to be executed without interruption, which
  * means that they do not need to be signal safe.
