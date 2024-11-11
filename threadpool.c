@@ -15,7 +15,6 @@ struct tpool_handle {
     enum {WAITING, FINISHED} status;
     pthread_mutex_t mutex;
     pthread_cond_t result_cond;
-    tpool_pool *pool;
     void *result;
 };
 
@@ -346,11 +345,10 @@ void *tpool_task_await(tpool_handle *handle) {
     return result;
 }
 
-static tpool_handle *task_handle_init(tpool_pool *pool) {
+static tpool_handle *task_handle_init() {
     tpool_handle *handle = malloc(sizeof(tpool_handle));
     handle->result = NULL;
     handle->status = WAITING;
-    handle->pool = pool;
     pthread_mutex_init(&handle->mutex, NULL);
     pthread_cond_init(&handle->result_cond, NULL);
     return handle;
@@ -361,7 +359,7 @@ tpool_handle *tpool_task_enqueue(tpool_pool *pool, tpool_work work, void *arg) {
     task->type = INITIAL;
     task->work = work;
     task->arg = arg;
-    tpool_handle *handle = task_handle_init(pool);
+    tpool_handle *handle = task_handle_init();
     task->handle = handle;
 
     tpool_enqueue(pool->task_queue, task);
