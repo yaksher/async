@@ -45,9 +45,6 @@ typedef struct thread_data {
     size_t id;
     task_t *curr_task;
     pthread_t self;
-    size_t atomic_depth;
-    bool privileged;
-    bool yield_requested;
 } tdata_t;
 
 #define TPOOL_DEFAULT_SIZE 16
@@ -122,24 +119,6 @@ static tdata_t *get_tdata() {
 #define PAGE_SIZE 4096
 #define TASK_STACK_SIZE PAGE_SIZE * 16
 
-void tpool_atomic_start() {
-    tdata_t *tdata = get_tdata();
-    if (tdata) {
-        tdata->atomic_depth += 1;
-    }
-}
-
-void tpool_atomic_end() {
-    tdata_t *tdata = get_tdata();
-    if (tdata) {
-        tdata->atomic_depth -= 1;
-        if (tdata->atomic_depth == 0 && tdata->yield_requested) {
-            tdata->yield_requested = false;
-            tpool_yield();
-        }
-    }
-}
-
 static void task_wrapper() {
     tdata_t *tdata = get_tdata();
     void *out = tdata->curr_task->work(tdata->curr_task->arg);
@@ -180,11 +159,9 @@ static void *run_task(task_t *task) {
     } else {
         ERROR("Invalid task type.\n");
     }
-    tdata->privileged = false;
     swapcontext(&tdata->return_context, &task->context);
 
     tdata = get_tdata();
-    tdata->privileged = true;
 
     DEBUG("Returning from task %p with value %p\n", task->handle, tdata->curr_task->arg);
     void *out = tdata->curr_task->arg;
@@ -227,9 +204,6 @@ static void *pool_thread(void *arg) {
         .self = pthread_self(),
         .id = *(size_t *) (arg + sizeof(tpool_pool *)),
         .curr_task = NULL,
-        .atomic_depth = 0,
-        .privileged = true,
-        .yield_requested = false
     };
     // pthread_setspecific(thread_local_key, tdata);
 
@@ -321,14 +295,11 @@ void tpool_yield() {
 
 void *tpool_task_await(tpool_handle *handle) {
     DEBUG("Awaiting handle %p.\n", handle);
-    // tpool_atomic_start();
     pthread_mutex_lock(&handle->mutex);
     if (get_tdata()) {
         while (handle->status == WAITING) {
             pthread_mutex_unlock(&handle->mutex);
-            tpool_atomic_end();
             tpool_yield(); // Potentially returns in different thread.
-            tpool_atomic_start();
             pthread_mutex_lock(&handle->mutex);
         }
     } else {
@@ -338,7 +309,6 @@ void *tpool_task_await(tpool_handle *handle) {
     }
     void *result = handle->result;
     pthread_mutex_unlock(&handle->mutex);
-    tpool_atomic_end();
     DEBUG("Done waiting on handle %p.\n", handle);
     free(handle);
 
