@@ -11,21 +11,24 @@
 #include "threadpool.h"
 #include "queue.h"
 
+typedef struct task task_t;
+
 struct tpool_handle {
     enum {WAITING, FINISHED} status;
     pthread_mutex_t mutex;
     pthread_cond_t result_cond;
+    task_t *waiter;
     void *result;
 };
 
-typedef struct {
-    enum {INITIAL, RESUME} type;
+struct task {
+    enum {INITIAL, RESUME, BLOCKED} type;
     void *arg;
     tpool_work work;
     tpool_handle *handle;
     void *stack;
     ucontext_t context;
-} task_t;
+};
 
 struct tpool_pool {
     tpool_queue *task_queue;
@@ -156,6 +159,8 @@ static void *run_task(task_t *task) {
         makecontext(&task->context, task_wrapper, 0);
     } else if (task->type == RESUME) {
         DEBUG("Resuming task %p\n", task->handle);
+    } else if (task->type == BLOCKED) {
+        ERROR("Attempted to run blocked task.\n");
     } else {
         ERROR("Invalid task type.\n");
     }
@@ -190,6 +195,11 @@ static bool launch_task(tpool_pool *pool) {
 
     pthread_mutex_lock(&handle->mutex);
     handle->status = FINISHED;
+    if (handle->waiter != NULL) {
+        handle->waiter->type = RESUME;
+        tpool_enqueue(pool->task_queue, handle->waiter);
+        handle->waiter = NULL;
+    }
     pthread_cond_broadcast(&handle->result_cond);
     pthread_mutex_unlock(&handle->mutex);
     DEBUG("Signaled handle %p\n", handle);
@@ -296,10 +306,20 @@ void tpool_yield() {
 void *tpool_task_await(tpool_handle *handle) {
     DEBUG("Awaiting handle %p.\n", handle);
     pthread_mutex_lock(&handle->mutex);
-    if (get_tdata()) {
+    tdata_t *tdata = get_tdata();
+    if (tdata) {
+        task_t *task = tdata->curr_task;
         while (handle->status == WAITING) {
+            task->type = BLOCKED;
+            ASSERT(handle->waiter == NULL);
+            handle->waiter = task;
+            tdata->curr_task = NULL;
             pthread_mutex_unlock(&handle->mutex);
-            tpool_yield(); // Potentially returns in different thread.
+            DEBUG("Yielding task %p.\n", task->handle);
+            swapcontext(&task->context, &tdata->yield_context); 
+            // tdata is invalidated past this point, since executation may
+            // continue in another thread.
+            DEBUG("Resuming %p.\n", get_tdata()->curr_task->handle);
             pthread_mutex_lock(&handle->mutex);
         }
     } else {
@@ -319,6 +339,7 @@ static tpool_handle *task_handle_init() {
     tpool_handle *handle = malloc(sizeof(tpool_handle));
     handle->result = NULL;
     handle->status = WAITING;
+    handle->waiter = NULL;
     pthread_mutex_init(&handle->mutex, NULL);
     pthread_cond_init(&handle->result_cond, NULL);
     return handle;
