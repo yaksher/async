@@ -64,57 +64,6 @@ typedef void *(*async_work)(void *arg);
 #define yield_while(COND...) _impl_YIELD_WHILE(COND)
 
 /**
- * @brief Atomic macros are used to create atomic sections in tasks.
- * 
- * Note that preemption is not currently actually implemented, making these
- * serve no actual purpose.
- *
- * Atomic sections are guaranteed to be executed without interruption, which
- * means that they do not need to be signal safe.
- *
- * All code not inside an atomic block must be signal safe.
- *
- * Usage is
- *
- * `atomic {
- *   // atomic code
- * }`
- *
- * or
- *
- * `atomic_start();
- *
- * // atomic code
- *
- * atomic_end();`
- *
- * If using the `atomic {}` block, note that using `goto`,
- * `break`, or `continue` to move from inside the block outisde it,
- * as well as returning or calling a function which does not return,
- * will result in unspecified behavior.
- *
- * Atomic sections may be nested (though this is equivalent to just the outer
- * atomic section)
- *
- * Calling `atomic_end()` more times than `atomic_start()` will result in unspecified
- * behavior.
- *
- * The `atomic_break` and `atomic_return` macros will jump to the end of the atomic block
- * and safely return from the function, respectively.
- *
- * Note that `atomic_return` is only valid when inside *exactly* one atomic block in
- * the current function.
- *
- * The `yield` macros above, as well as `await` will still yield control of the
- * thread to other tasks. The `atomic` mode only prevents signal interrupts.
- */
-#define atomic _impl_ATOMIC
-#define atomic_start _impl_ATOMIC_START
-#define atomic_end _impl_ATOMIC_END
-#define atomic_break _impl_ATOMIC_BREAK
-#define atomic_return _impl_ATOMIC_RETURN
-
-/**
  * @brief Initializes the async library. Calls made before the next call to
  * async_close will do nothing. Calls made while async_close is running will
  * block until async_close returns, then run.

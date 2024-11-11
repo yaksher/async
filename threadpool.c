@@ -9,7 +9,6 @@
 #include <string.h>
 
 #include "threadpool.h"
-#include "wrappings.h"
 #include "queue.h"
 
 struct tpool_handle {
@@ -252,36 +251,10 @@ static void *pool_thread(void *arg) {
     }
 }
 
-void interrupt_handler(int sig, siginfo_t *info, void *context) {
-    (void) sig;
-    (void) info;
-    tdata_t *tdata = get_tdata();
-    if (tdata == NULL || tdata->privileged) {
-        return;
-    }
-    if (tdata->atomic_depth > 0) {
-        tdata->yield_requested = true;
-        return;
-    }
-    tdata->curr_task->type = RESUME;
-    memcpy(&tdata->curr_task->context, context, sizeof(ucontext_t));
-    memcpy(context, &tdata->yield_context, sizeof(ucontext_t));
-}
-
 tpool_pool *tpool_init(size_t size) {
     if (size == 0) {
         size = TPOOL_DEFAULT_SIZE;
     }
-
-    struct sigaction handler = {
-        .sa_sigaction = interrupt_handler,
-        .sa_flags = SA_SIGINFO,
-        .sa_mask = 0
-    };
-
-    sigaction(SIGUSR1, &handler, NULL);
-
-    set_mem_wrapper(tpool_atomic_start, tpool_atomic_end);
 
     tpool_pool *pool = malloc(sizeof(tpool_pool) + sizeof(pthread_t) * size);
 
